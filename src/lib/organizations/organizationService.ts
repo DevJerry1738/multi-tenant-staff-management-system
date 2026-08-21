@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
 import { MOCK_ORGANIZATIONS, MOCK_ROLES, MOCK_PERMISSIONS } from '@/lib/tenant/mockData';
 import type {
   Organization,
@@ -20,6 +20,13 @@ export interface CreateOrganizationInput {
   address?: string;
   country: string;
   timezone: string;
+  admin_first_name?: string;
+  admin_last_name?: string;
+  admin_email?: string;
+  admin_password?: string;
+  attendance_method?: AttendanceMethod;
+  default_work_start?: string;
+  default_work_end?: string;
 }
 
 export interface SetupOrganizationInput {
@@ -66,6 +73,14 @@ class OrganizationService {
     input: CreateOrganizationInput,
     actorUserId?: string
   ): Promise<{ data: Organization | null; error?: string }> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase.functions.invoke('register-organization', { body: input });
+      if (error || !data?.organization) {
+        return { data: null, error: 'Organization registration is currently unavailable. Please try again later.' };
+      }
+      return { data: data.organization as Organization };
+    }
+
     const existing = await this.getOrganizations();
     if (existing.some((o) => o.slug.toLowerCase() === input.slug.toLowerCase())) {
       return { data: null, error: `An organization with the identifier "${input.slug}" already exists.` };
@@ -118,13 +133,6 @@ class OrganizationService {
       'settings.view', 'settings.update',
     ];
     MOCK_PERMISSIONS[orgId] = allPermKeys;
-
-    // Attempt Supabase DB Insert
-    try {
-      await supabase.from('organizations').insert([newOrg]);
-    } catch {
-      // Local fallback
-    }
 
     await auditService.logEvent({
       organizationId: orgId,

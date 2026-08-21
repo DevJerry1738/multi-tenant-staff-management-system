@@ -7,6 +7,8 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { ForgotPasswordPage } from '@/features/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
 import { UnauthorizedPage } from '@/features/auth/UnauthorizedPage';
+import { AccountPendingPage } from '@/features/auth/AccountPendingPage';
+import { AccountDeactivatedPage } from '@/features/auth/AccountDeactivatedPage';
 import { AcceptInvitationPage } from '@/features/onboarding/AcceptInvitationPage';
 import { OrganizationListPage } from '@/features/onboarding/OrganizationListPage';
 import { OrganizationSetupWizard } from '@/features/onboarding/OrganizationSetupWizard';
@@ -22,12 +24,14 @@ import { BiometricImportPage } from '@/features/attendance/BiometricImportPage';
 import { AttendanceReportsPage } from '@/features/attendance/AttendanceReportsPage';
 import { PlaceholderModule } from '@/components/common/PlaceholderModule';
 import { RequirePermission } from './RequirePermission';
+import { RootResolver } from './RootResolver';
 
 // ── Auth guard ──────────────────────────────────────────────────────────────
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { membershipStatus, isLoading: tenantLoading } = useTenant();
 
-  if (isLoading) {
+  if (authLoading || tenantLoading || membershipStatus === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
@@ -39,6 +43,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (membershipStatus === 'no_membership') return <Navigate to="/account/pending" replace />;
+  if (membershipStatus === 'deactivated') return <Navigate to="/account/deactivated" replace />;
+
   return <AppShell>{children}</AppShell>;
 };
 
@@ -53,11 +60,17 @@ const RequirePlatformAdmin: React.FC<{ children: React.ReactNode }> = ({ childre
 export const AppRouter: React.FC = () => {
   return (
     <Routes>
+      {/* ── Entry Point / Auth Gateway Resolver ────────────────────────────── */}
+      <Route path="/" element={<RootResolver />} />
+
       {/* ── Public routes ──────────────────────────────────────────────────── */}
       <Route path="/login"              element={<LoginPage />} />
+      <Route path="/organizations/create" element={<OrganizationSetupWizard />} />
       <Route path="/forgot-password"    element={<ForgotPasswordPage />} />
       <Route path="/reset-password"     element={<ResetPasswordPage />} />
       <Route path="/accept-invitation"  element={<AcceptInvitationPage />} />
+      <Route path="/account/pending"    element={<AccountPendingPage />} />
+      <Route path="/account/deactivated" element={<AccountDeactivatedPage />} />
 
       {/* ── Platform Admin — organization provisioning ─────────────────────── */}
       <Route path="/organizations" element={
@@ -215,8 +228,8 @@ export const AppRouter: React.FC = () => {
         <ProtectedRoute><UnauthorizedPage /></ProtectedRoute>
       } />
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      {/* Fallback to RootResolver */}
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 };

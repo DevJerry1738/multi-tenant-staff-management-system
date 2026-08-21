@@ -12,63 +12,97 @@ export interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  /** True while the initial session check is in-flight. Gate all routing on this. */
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ success: boolean; message?: string }>;
 }
 
-const DEFAULT_USER: AuthUser = {
-  id: 'usr-admin-demo',
-  email: 'admin@demorealty.com',
-  user_metadata: {
-    full_name: 'Platform Operator',
-  },
-};
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function toAuthUser(raw: any): AuthUser {
+  return {
+    id: raw.id,
+    email: raw.email ?? '',
+    user_metadata: {
+      full_name: raw.user_metadata?.full_name ?? raw.email?.split('@')[0] ?? '',
+    },
+  };
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<AuthUser | null>(DEFAULT_USER);
-  const [isLoading, setIsLoading] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  // Start as loading — nothing renders until we have confirmed auth state
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check saved session in localStorage
-    const saved = localStorage.getItem('auth_user');
-    if (saved) {
-      try {
-        setUser(JSON.parse(saved));
-      } catch {
-        setUser(DEFAULT_USER);
+    // Restore session on mount (Supabase or mock dev session)
+    const restoreSession = async () => {
+      const { user: sessionUser } = await authService.getSession();
+      if (sessionUser) {
+        setUser(toAuthUser(sessionUser));
+      } else {
+        // Check for a persisted mock dev session
+        const saved = sessionStorage.getItem('mock_auth_user');
+        if (saved) {
+          try {
+            setUser(JSON.parse(saved));
+          } catch {
+            sessionStorage.removeItem('mock_auth_user');
+          }
+        }
       }
-    }
+      setIsLoading(false);
+    };
+
+    restoreSession();
+
+    // Listen for real Supabase auth state changes (login / logout / token refresh)
+    const unsubscribe = authService.onAuthStateChange((supabaseUser) => {
+      if (supabaseUser) {
+        setUser(toAuthUser(supabaseUser));
+      } else {
+        // Only clear if we don't have a mock dev session active
+        const saved = sessionStorage.getItem('mock_auth_user');
+        if (!saved) {
+          setUser(null);
+        }
+      }
+    });
+
+    return unsubscribe;
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     const result = await authService.signInWithPassword(email, password);
+
     if (result.data?.user) {
-      const authUser: AuthUser = {
-        id: result.data.user.id,
-        email: result.data.user.email || email,
-        user_metadata: {
-          full_name: result.data.user.user_metadata?.full_name || email.split('@')[0],
-        },
-      };
+      const authUser = toAuthUser(result.data.user);
       setUser(authUser);
-      localStorage.setItem('auth_user', JSON.stringify(authUser));
+
+      // Persist mock session in sessionStorage (cleared on tab close)
+      if ((result as any).isMock) {
+        sessionStorage.setItem('mock_auth_user', JSON.stringify(authUser));
+      }
+
       setIsLoading(false);
-      return true;
+      return { success: true };
     }
+
     setIsLoading(false);
-    return false;
+    return {
+      success: false,
+      error: (result.error as any)?.message ?? 'Sign in failed. Please check your credentials.',
+    };
   };
 
   const logout = async () => {
     setIsLoading(true);
     await authService.signOut();
+    sessionStorage.removeItem('mock_auth_user');
     setUser(null);
-    localStorage.removeItem('auth_user');
     setIsLoading(false);
   };
 

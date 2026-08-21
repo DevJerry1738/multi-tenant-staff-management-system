@@ -21,6 +21,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
 
 type WizardStep = 1 | 2 | 3 | 4 | 5;
 
@@ -44,6 +45,8 @@ interface AdminForm {
   first_name: string;
   last_name: string;
   email: string;
+  password: string;
+  confirm_password: string;
 }
 
 const TIMEZONES = [
@@ -93,7 +96,7 @@ export const OrganizationSetupWizard: React.FC = () => {
   });
 
   const [adminForm, setAdminForm] = useState<AdminForm>({
-    first_name: '', last_name: '', email: '',
+    first_name: '', last_name: '', email: '', password: '', confirm_password: '',
   });
 
   // ── Step Validation ──────────────────────────────────────────────────────
@@ -108,6 +111,8 @@ export const OrganizationSetupWizard: React.FC = () => {
       if (!adminForm.first_name.trim()) return 'Admin First Name is required.';
       if (!adminForm.last_name.trim()) return 'Admin Last Name is required.';
       if (!adminForm.email.trim() || !adminForm.email.includes('@')) return 'A valid Admin Email is required.';
+      if (adminForm.password.length < 8) return 'Admin password must be at least 8 characters.';
+      if (adminForm.password !== adminForm.confirm_password) return 'Admin passwords do not match.';
     }
     return null;
   };
@@ -137,6 +142,13 @@ export const OrganizationSetupWizard: React.FC = () => {
       website: orgInfo.website.trim() || undefined,
       country: orgInfo.country,
       timezone: orgInfo.timezone,
+      admin_first_name: adminForm.first_name.trim(),
+      admin_last_name: adminForm.last_name.trim(),
+      admin_email: adminForm.email.trim(),
+      admin_password: adminForm.password,
+      attendance_method: orgSettings.attendance_method,
+      default_work_start: orgSettings.default_work_start,
+      default_work_end: orgSettings.default_work_end,
     };
 
     const { data: org, error: createErr } = await organizationService.createOrganization(input, user?.id);
@@ -146,24 +158,39 @@ export const OrganizationSetupWizard: React.FC = () => {
       return;
     }
 
-    const { success, invitation: inv, error: setupErr } = await organizationService.completeOrganizationSetup(
-      org.id,
-      {
-        timezone: orgInfo.timezone,
-        attendance_method: orgSettings.attendance_method,
-        default_work_start: orgSettings.default_work_start,
-        default_work_end: orgSettings.default_work_end,
-        admin_first_name: adminForm.first_name.trim(),
-        admin_last_name: adminForm.last_name.trim(),
-        admin_email: adminForm.email.trim(),
-      },
-      user?.id
-    );
+    if (isSupabaseConfigured) {
+      const { error: sessionError } = await supabase.auth.signInWithPassword({
+        email: adminForm.email.trim(),
+        password: adminForm.password,
+      });
+      if (sessionError) {
+        setFormError('Organization created. Sign in with the administrator email and password to continue.');
+        setIsSubmitting(false);
+        return;
+      }
+    }
 
-    if (!success || setupErr) {
-      setFormError(setupErr || 'Organization created but setup could not be completed.');
-      setIsSubmitting(false);
-      return;
+    let inv: OrganizationInvitation | undefined;
+    if (!isSupabaseConfigured) {
+      const setupResult = await organizationService.completeOrganizationSetup(
+        org.id,
+        {
+          timezone: orgInfo.timezone,
+          attendance_method: orgSettings.attendance_method,
+          default_work_start: orgSettings.default_work_start,
+          default_work_end: orgSettings.default_work_end,
+          admin_first_name: adminForm.first_name.trim(),
+          admin_last_name: adminForm.last_name.trim(),
+          admin_email: adminForm.email.trim(),
+        },
+        user?.id
+      );
+      if (!setupResult.success || setupResult.error) {
+        setFormError(setupResult.error || 'Organization setup could not be completed.');
+        setIsSubmitting(false);
+        return;
+      }
+      inv = setupResult.invitation;
     }
 
     setCreatedOrgId(org.id);
@@ -341,6 +368,14 @@ export const OrganizationSetupWizard: React.FC = () => {
                     <label className={labelCls}>Admin Email *</label>
                     <input type="email" className={inputCls} value={adminForm.email} onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })} placeholder="admin@acmerealty.com" />
                   </div>
+                  <div>
+                    <label className={labelCls}>Password *</label>
+                    <input type="password" minLength={8} className={inputCls} value={adminForm.password} onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })} autoComplete="new-password" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Confirm Password *</label>
+                    <input type="password" minLength={8} className={inputCls} value={adminForm.confirm_password} onChange={(e) => setAdminForm({ ...adminForm, confirm_password: e.target.value })} autoComplete="new-password" />
+                  </div>
                 </div>
 
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
@@ -426,13 +461,6 @@ export const OrganizationSetupWizard: React.FC = () => {
                       An invitation has been generated for <strong>{invitation.email}</strong> as <strong>{invitation.role_name}</strong>.
                     </p>
 
-                    {/* In development: show the token link since email infra isn't connected */}
-                    <div className="mt-2 p-2 bg-white rounded-lg border border-indigo-200">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Development Invitation Link (copy & open in browser)</div>
-                      <code className="text-[10px] text-indigo-600 break-all font-mono">
-                        {window.location.origin}/accept-invitation?token={invitation.token}
-                      </code>
-                    </div>
                   </div>
                 )}
 
