@@ -96,7 +96,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const { data: memberships, error } = await supabase
           .from('organization_members')
           .select(`
-            id, status, role_id,
+            id, organization_id, user_id, status,
             organizations ( id, name, slug, status, setup_completed_at, country, timezone )
           `)
           .eq('user_id', user.id)
