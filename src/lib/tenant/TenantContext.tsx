@@ -95,14 +95,13 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const { data: memberships, error } = await supabase
           .from('organization_members')
-          .select(`
-            id, organization_id, user_id, status,
-            organizations ( id, name, slug, status, country, timezone )
-          `)
+          .select('id, organization_id, user_id, status')
           .eq('user_id', user.id)
           .limit(10);
 
-        if (!error && memberships && memberships.length > 0) {
+        if (error) {
+          console.error('Unable to resolve organization membership.', error);
+        } else if (memberships && memberships.length > 0) {
           resolvedFromSupabase = true;
 
           // Check for deactivated/suspended membership
@@ -116,15 +115,35 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
 
           if (activeMembership) {
-            const org = {
-              ...(activeMembership as any).organizations,
-              setup_completed_at: (activeMembership as any).organizations?.setup_completed_at ?? null,
-            } as Organization;
+            const { data: organization, error: organizationError } = await supabase
+              .from('organizations')
+              .select('id, name, slug, status, country, timezone')
+              .eq('id', activeMembership.organization_id)
+              .single();
+            if (organizationError || !organization) {
+              console.error('Unable to resolve organization.', organizationError);
+              setMembershipStatus('no_membership');
+              setIsLoading(false);
+              return;
+            }
+
+            const org = { ...organization, setup_completed_at: null } as Organization;
             setActiveOrganization(org);
-            setUserOrganizations(memberships.map((m: any) => ({
-              ...m.organizations,
-              setup_completed_at: m.organizations?.setup_completed_at ?? null,
-            }) as Organization));
+            const organizationResults = await Promise.all(
+              memberships.map((membership: any) =>
+                supabase
+                  .from('organizations')
+                  .select('id, name, slug, status, country, timezone')
+                  .eq('id', membership.organization_id)
+                  .maybeSingle()
+              )
+            );
+            setUserOrganizations(
+              organizationResults
+                .map((result) => result.data)
+                .filter(Boolean)
+                .map((organizationData) => ({ ...organizationData, setup_completed_at: null }) as Organization)
+            );
 
             const memberRoleResult = await supabase
               .from('member_roles')
