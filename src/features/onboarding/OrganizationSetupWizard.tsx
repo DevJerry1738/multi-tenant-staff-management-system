@@ -21,7 +21,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui';
-import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
+import { isSupabaseConfigured } from '@/lib/supabase/client';
 
 type WizardStep = 1 | 2 | 3 | 4 | 5;
 
@@ -45,8 +45,6 @@ interface AdminForm {
   first_name: string;
   last_name: string;
   email: string;
-  password: string;
-  confirm_password: string;
 }
 
 const TIMEZONES = [
@@ -96,7 +94,7 @@ export const OrganizationSetupWizard: React.FC = () => {
   });
 
   const [adminForm, setAdminForm] = useState<AdminForm>({
-    first_name: '', last_name: '', email: '', password: '', confirm_password: '',
+    first_name: '', last_name: '', email: '',
   });
 
   // ── Step Validation ──────────────────────────────────────────────────────
@@ -111,8 +109,6 @@ export const OrganizationSetupWizard: React.FC = () => {
       if (!adminForm.first_name.trim()) return 'Admin First Name is required.';
       if (!adminForm.last_name.trim()) return 'Admin Last Name is required.';
       if (!adminForm.email.trim() || !adminForm.email.includes('@')) return 'A valid Admin Email is required.';
-      if (adminForm.password.length < 8) return 'Admin password must be at least 8 characters.';
-      if (adminForm.password !== adminForm.confirm_password) return 'Admin passwords do not match.';
     }
     return null;
   };
@@ -145,7 +141,6 @@ export const OrganizationSetupWizard: React.FC = () => {
       admin_first_name: adminForm.first_name.trim(),
       admin_last_name: adminForm.last_name.trim(),
       admin_email: adminForm.email.trim(),
-      admin_password: adminForm.password,
       attendance_method: orgSettings.attendance_method,
       default_work_start: orgSettings.default_work_start,
       default_work_end: orgSettings.default_work_end,
@@ -156,18 +151,6 @@ export const OrganizationSetupWizard: React.FC = () => {
       setFormError(createErr || 'Failed to create organization. Please try again.');
       setIsSubmitting(false);
       return;
-    }
-
-    if (isSupabaseConfigured) {
-      const { error: sessionError } = await supabase.auth.signInWithPassword({
-        email: adminForm.email.trim(),
-        password: adminForm.password,
-      });
-      if (sessionError) {
-        setFormError('Organization created. Sign in with the administrator email and password to continue.');
-        setIsSubmitting(false);
-        return;
-      }
     }
 
     let inv: OrganizationInvitation | undefined;
@@ -367,14 +350,6 @@ export const OrganizationSetupWizard: React.FC = () => {
                   <div className="sm:col-span-2">
                     <label className={labelCls}>Admin Email *</label>
                     <input type="email" className={inputCls} value={adminForm.email} onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })} placeholder="admin@acmerealty.com" />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Password *</label>
-                    <input type="password" minLength={8} className={inputCls} value={adminForm.password} onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })} autoComplete="new-password" />
-                  </div>
-                  <div>
-                    <label className={labelCls}>Confirm Password *</label>
-                    <input type="password" minLength={8} className={inputCls} value={adminForm.confirm_password} onChange={(e) => setAdminForm({ ...adminForm, confirm_password: e.target.value })} autoComplete="new-password" />
                   </div>
                 </div>
 

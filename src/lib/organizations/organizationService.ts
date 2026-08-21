@@ -23,7 +23,6 @@ export interface CreateOrganizationInput {
   admin_first_name?: string;
   admin_last_name?: string;
   admin_email?: string;
-  admin_password?: string;
   attendance_method?: AttendanceMethod;
   default_work_start?: string;
   default_work_end?: string;

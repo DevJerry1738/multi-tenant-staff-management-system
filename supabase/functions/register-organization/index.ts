@@ -18,11 +18,10 @@ Deno.serve(async (request) => {
   const input = await request.json().catch(() => null);
   if (!input || typeof input !== 'object') return json({ error: 'Invalid request.' }, 400);
 
-  const required = ['name', 'slug', 'country', 'timezone', 'admin_first_name', 'admin_last_name', 'admin_email', 'admin_password'];
+  const required = ['name', 'slug', 'country', 'timezone', 'admin_first_name', 'admin_last_name', 'admin_email'];
   if (required.some((key) => typeof input[key] !== 'string' || !input[key].trim())) {
     return json({ error: 'Organization and administrator details are required.' }, 400);
   }
-  if (input.admin_password.length < 8) return json({ error: 'Administrator password must be at least 8 characters.' }, 400);
 
   const admin = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -40,14 +39,16 @@ Deno.serve(async (request) => {
       .maybeSingle();
     if (existingOrg) return json({ error: 'An organization with this identifier already exists.' }, 409);
 
-    const { data: authUser, error: authError } = await admin.auth.admin.createUser({
-      email: input.admin_email.trim().toLowerCase(),
-      password: input.admin_password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: `${input.admin_first_name.trim()} ${input.admin_last_name.trim()}`,
+    const appUrl = Deno.env.get('PUBLIC_APP_URL') ?? 'http://localhost:5173';
+    const { data: authUser, error: authError } = await admin.auth.admin.inviteUserByEmail(
+      input.admin_email.trim().toLowerCase(),
+      {
+        redirectTo: `${appUrl}/reset-password`,
+        data: {
+          full_name: `${input.admin_first_name.trim()} ${input.admin_last_name.trim()}`,
+        },
       },
-    });
+    );
     if (authError || !authUser.user) return json({ error: 'Unable to create the administrator account.' }, 400);
     userId = authUser.user.id;
 
