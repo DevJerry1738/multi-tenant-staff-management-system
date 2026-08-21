@@ -129,7 +129,7 @@ class BiometricImportService {
       const date = raw[mapping.attendance_date]?.trim() || '';
       const clockIn = raw[mapping.clock_in]?.trim() || null;
       const clockOut = raw[mapping.clock_out]?.trim() || null;
-      const locStr = raw[mapping.work_location]?.toLowerCase() || 'office';
+      const locStr = mapping.work_location ? raw[mapping.work_location]?.toLowerCase() || 'office' : 'office';
       const workLocation = locStr.includes('remote') ? 'remote' : locStr.includes('field') ? 'field' : 'office';
 
       const errors: string[] = [];

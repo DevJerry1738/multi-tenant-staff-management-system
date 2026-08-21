@@ -10,6 +10,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     country: 'United States',
     timezone: 'America/New_York',
     status: 'active',
+    setup_completed_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -22,6 +23,7 @@ export const MOCK_ORGANIZATIONS: Organization[] = [
     country: 'Canada',
     timezone: 'America/Toronto',
     status: 'active',
+    setup_completed_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -118,7 +120,7 @@ export const MOCK_STAFF: Record<string, StaffProfile[]> = {
       date_joined: '2022-01-10',
       date_left: null,
       address: '100 Brokerage Way, New York, NY',
-      emergency_contact: { name: 'John Vance', phone: '+1 555-9999', relation: 'Spouse' },
+      emergency_contact: { name: 'John Vance', phone: '+1 555-9999', relationship: 'Spouse' },
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -191,11 +193,11 @@ export const MOCK_DEPARTMENTS: Record<string, Department[]> = {
 
 export const MOCK_ATTENDANCE: Record<string, AttendanceRecord[]> = {
   '11111111-1111-1111-1111-111111111111': [
-    { id: 'att-a1', organization_id: '11111111-1111-1111-1111-111111111111', staff_id: 'staff-a1', attendance_date: '2026-08-20', clock_in: '2026-08-20T08:58:00Z', clock_out: null, status: 'present', work_mode: 'office', notes: 'In office for client meeting', source: 'self', created_at: '', updated_at: '' },
-    { id: 'att-a2', organization_id: '11111111-1111-1111-1111-111111111111', staff_id: 'staff-a2', attendance_date: '2026-08-20', clock_in: '2026-08-20T09:05:00Z', clock_out: null, status: 'present', work_mode: 'remote', notes: 'Working remotely today', source: 'self', created_at: '', updated_at: '' },
+    { id: 'att-a1', organization_id: '11111111-1111-1111-1111-111111111111', staff_id: 'staff-a1', attendance_date: '2026-08-20', clock_in: '2026-08-20T08:58:00Z', clock_out: null, status: 'present', work_location: 'office', total_hours: null, notes: 'In office for client meeting', source: 'platform', created_at: '', updated_at: '' },
+    { id: 'att-a2', organization_id: '11111111-1111-1111-1111-111111111111', staff_id: 'staff-a2', attendance_date: '2026-08-20', clock_in: '2026-08-20T09:05:00Z', clock_out: null, status: 'present', work_location: 'remote', total_hours: null, notes: 'Working remotely today', source: 'platform', created_at: '', updated_at: '' },
   ],
   '22222222-2222-2222-2222-222222222222': [
-    { id: 'att-b1', organization_id: '22222222-2222-2222-2222-222222222222', staff_id: 'staff-b1', attendance_date: '2026-08-20', clock_in: '2026-08-20T08:25:00Z', clock_out: null, status: 'present', work_mode: 'field', notes: 'Onsite construction survey', source: 'self', created_at: '', updated_at: '' },
+    { id: 'att-b1', organization_id: '22222222-2222-2222-2222-222222222222', staff_id: 'staff-b1', attendance_date: '2026-08-20', clock_in: '2026-08-20T08:25:00Z', clock_out: null, status: 'present', work_location: 'field', total_hours: null, notes: 'Onsite construction survey', source: 'platform', created_at: '', updated_at: '' },
   ],
 };
 

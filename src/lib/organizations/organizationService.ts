@@ -212,7 +212,7 @@ class OrganizationService {
   /**
    * Accepts an invitation and provisions authentication membership.
    */
-  async acceptInvitation(token: string, password: string): Promise<{ success: boolean; email?: string; error?: string }> {
+  async acceptInvitation(token: string, _password: string): Promise<{ success: boolean; email?: string; error?: string }> {
     const inv = await this.getInvitationByToken(token);
     if (!inv) {
       return { success: false, error: 'Invitation link is invalid or has already been accepted.' };

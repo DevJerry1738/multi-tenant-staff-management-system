@@ -433,8 +433,6 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({
             </div>
           </div>
 
-          </div>
-
           {/* Section 4: Portal Login Access — create mode only */}
           {!staffToEdit && (
             <div className="space-y-3 pt-3 border-t border-slate-100">

@@ -205,7 +205,7 @@ export const StaffDetailPage: React.FC = () => {
                   { key: 'account', label: 'Account Link', icon: Lock },
                 ] as const
               ).map((tab) => {
-                if (tab.restricted) return null;
+                if ('restricted' in tab && tab.restricted) return null;
                 const Icon = tab.icon;
                 return (
                   <button
