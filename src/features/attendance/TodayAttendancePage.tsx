@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useTenant } from '@/lib/tenant/TenantContext';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { attendanceService } from '@/lib/attendance/attendanceService';
 import { staffService } from '@/lib/staff/staffService';
-import type { AttendanceRecord, StaffProfile, WorkLocation } from '@/types/database';
+import type { AttendanceRecord, OrganizationSettings, StaffProfile, WorkLocation } from '@/types/database';
 import { AttendanceLayout } from './AttendanceLayout';
 import { Card, CardHeader, CardTitle, CardContent, Badge, Button } from '@/components/ui';
 import {
@@ -19,11 +20,13 @@ import {
   UserCheck,
   UserX,
   FileSpreadsheet,
+  UploadCloud,
 } from 'lucide-react';
 
 export const TodayAttendancePage: React.FC = () => {
   const { activeOrganization, activeRoles } = useTenant();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const orgId = activeOrganization?.id || '';
 
   const isAdminOrHR = activeRoles.some(
@@ -38,6 +41,7 @@ export const TodayAttendancePage: React.FC = () => {
   const [notes, setNotes] = useState('');
   const [clockingLoading, setClockingLoading] = useState(false);
   const [clockError, setClockError] = useState<string | null>(null);
+  const [attendanceSettings, setAttendanceSettings] = useState<Partial<OrganizationSettings>>({});
 
   // Admin/Manager State
   const [todayList, setTodayList] = useState<AttendanceRecord[]>([]);
@@ -48,6 +52,9 @@ export const TodayAttendancePage: React.FC = () => {
   const loadTodayData = async () => {
     if (!orgId) return;
     setLoading(true);
+
+    const settings = await attendanceService.getAttendanceSettings(orgId);
+    setAttendanceSettings(settings);
 
     const allStaff = await staffService.getStaffProfiles({ orgId, limit: 1000 });
     setStaffList(allStaff.data);
@@ -129,6 +136,7 @@ export const TodayAttendancePage: React.FC = () => {
   const fieldCount = todayList.filter((r) => r.work_location === 'field').length;
   const incompleteCount = todayList.filter((r) => r.clock_in && !r.clock_out).length;
   const absentCount = Math.max(0, staffList.length - presentCount);
+  const isBiometricImport = attendanceSettings.attendance_method === 'biometric_import';
 
   return (
     <AttendanceLayout>
@@ -180,8 +188,29 @@ export const TodayAttendancePage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Right Column: Clocking Action Box */}
+              {/* Right Column: clocking or biometric import status */}
               <div className="w-full md:w-auto bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/10 space-y-3 shrink-0">
+                {isBiometricImport ? (
+                  <div className="max-w-xs text-center space-y-3">
+                    <FileSpreadsheet size={28} className="mx-auto text-indigo-200" />
+                    <div>
+                      <p className="text-sm font-bold text-white">Biometric Import Active</p>
+                      <p className="text-xs text-indigo-100 mt-1">
+                        Attendance is recorded from your organization&apos;s biometric device imports. Web clocking is disabled.
+                      </p>
+                    </div>
+                    {isAdminOrHR && (
+                      <Button
+                        type="button"
+                        onClick={() => navigate('/attendance/import')}
+                        className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs"
+                      >
+                        <UploadCloud size={14} className="mr-1.5" /> Open Import
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <>
                 {clockError && (
                   <div className="p-2 rounded bg-rose-500/20 border border-rose-500/30 text-rose-200 text-xs flex items-center gap-1.5">
                     <AlertCircle size={14} className="shrink-0" />
@@ -251,6 +280,8 @@ export const TodayAttendancePage: React.FC = () => {
                     <CheckCircle2 size={16} className="mx-auto mb-1" />
                     Today's shift completed
                   </div>
+                )}
+                  </>
                 )}
               </div>
             </div>
