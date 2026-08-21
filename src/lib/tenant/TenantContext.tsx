@@ -97,7 +97,7 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           .from('organization_members')
           .select(`
             id, organization_id, user_id, status,
-            organizations ( id, name, slug, status, setup_completed_at, country, timezone )
+            organizations ( id, name, slug, status, country, timezone )
           `)
           .eq('user_id', user.id)
           .limit(10);
@@ -116,9 +116,15 @@ export const TenantProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           }
 
           if (activeMembership) {
-            const org = (activeMembership as any).organizations as Organization;
+            const org = {
+              ...(activeMembership as any).organizations,
+              setup_completed_at: (activeMembership as any).organizations?.setup_completed_at ?? null,
+            } as Organization;
             setActiveOrganization(org);
-            setUserOrganizations(memberships.map((m: any) => m.organizations as Organization));
+            setUserOrganizations(memberships.map((m: any) => ({
+              ...m.organizations,
+              setup_completed_at: m.organizations?.setup_completed_at ?? null,
+            }) as Organization));
 
             const memberRoleResult = await supabase
               .from('member_roles')
