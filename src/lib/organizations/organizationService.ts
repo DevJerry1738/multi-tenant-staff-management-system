@@ -46,14 +46,20 @@ class OrganizationService {
    * Retrieves all organizations (Platform Admin view).
    */
   async getOrganizations(): Promise<Organization[]> {
+    if (!isSupabaseConfigured) {
+      return MOCK_ORGANIZATIONS;
+    }
+
     try {
       const { data, error } = await supabase.from('organizations').select('*').order('created_at', { ascending: false });
-      if (error || !data || data.length === 0) {
-        return MOCK_ORGANIZATIONS;
+      if (error) {
+        console.error('Unable to load organizations.', error);
+        return [];
       }
-      return data;
-    } catch {
-      return MOCK_ORGANIZATIONS;
+      return data ?? [];
+    } catch (error) {
+      console.error('Unable to load organizations.', error);
+      return [];
     }
   }
 
