@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth/AuthContext';
+import { useTenant } from '@/lib/tenant/TenantContext';
 import { UserCheck, LogOut, Mail, RefreshCw } from 'lucide-react';
 
 /**
@@ -14,7 +15,14 @@ import { UserCheck, LogOut, Mail, RefreshCw } from 'lucide-react';
  */
 export const AccountPendingPage: React.FC = () => {
   const { user, logout } = useAuth();
+  const { membershipStatus, isPlatformAdmin } = useTenant();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (membershipStatus === 'active') {
+      navigate(isPlatformAdmin ? '/organizations' : '/dashboard', { replace: true });
+    }
+  }, [membershipStatus, isPlatformAdmin, navigate]);
 
   const handleSignOut = async () => {
     await logout();
