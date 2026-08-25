@@ -56,7 +56,11 @@ Deno.serve(async (request) => {
       .from('organizations')
       .insert({
         name: input.name.trim(),
+        legal_name: input.legal_name?.trim() || null,
         slug: input.slug.trim().toLowerCase(),
+        email: input.email?.trim() || null,
+        phone: input.phone?.trim() || null,
+        website: input.website?.trim() || null,
         country: input.country.trim(),
         timezone: input.timezone.trim(),
         status: 'active',

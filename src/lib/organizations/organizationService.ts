@@ -38,6 +38,20 @@ export interface SetupOrganizationInput {
   admin_email: string;
 }
 
+export interface UpdateOrganizationInput {
+  name: string;
+  legal_name?: string;
+  slug: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  country: string;
+  timezone: string;
+  attendance_method: AttendanceMethod;
+  default_work_start: string;
+  default_work_end: string;
+}
+
 // In-memory store for pending invitations
 export const MOCK_INVITATIONS: OrganizationInvitation[] = [];
 
@@ -67,8 +81,88 @@ class OrganizationService {
    * Retrieves a single organization by ID.
    */
   async getOrganizationById(id: string): Promise<Organization | null> {
-    const all = await this.getOrganizations();
-    return all.find((o) => o.id === id) || null;
+    if (!isSupabaseConfigured) {
+      return MOCK_ORGANIZATIONS.find((o) => o.id === id) || null;
+    }
+
+    const { data, error } = await supabase
+      .from('organizations')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) {
+      console.error('Unable to load organization.', error);
+      return null;
+    }
+    return data as Organization | null;
+  }
+
+  async getOrganizationSettings(organizationId: string): Promise<OrganizationSettings | null> {
+    if (!isSupabaseConfigured) return null;
+
+    const { data, error } = await supabase
+      .from('organization_settings')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (error) {
+      console.error('Unable to load organization settings.', error);
+      return null;
+    }
+    return data as OrganizationSettings | null;
+  }
+
+  async updateOrganization(
+    id: string,
+    input: UpdateOrganizationInput,
+  ): Promise<{ data: Organization | null; error?: string }> {
+    if (!isSupabaseConfigured) {
+      const organization = MOCK_ORGANIZATIONS.find((item) => item.id === id);
+      if (!organization) return { data: null, error: 'Organization not found.' };
+      Object.assign(organization, {
+        name: input.name,
+        slug: input.slug,
+        legal_name: input.legal_name || null,
+        email: input.email || null,
+        phone: input.phone || null,
+        website: input.website || null,
+        country: input.country,
+        timezone: input.timezone,
+        updated_at: new Date().toISOString(),
+      });
+      return { data: organization };
+    }
+
+    const { data, error } = await supabase
+      .from('organizations')
+      .update({
+        name: input.name,
+        slug: input.slug,
+        legal_name: input.legal_name || null,
+        email: input.email || null,
+        phone: input.phone || null,
+        website: input.website || null,
+        country: input.country,
+        timezone: input.timezone,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select('*')
+      .single();
+    if (error || !data) return { data: null, error: error?.message || 'Unable to update organization.' };
+
+    const { error: settingsError } = await supabase
+      .from('organization_settings')
+      .update({
+        attendance_method: input.attendance_method,
+        default_work_start: input.default_work_start,
+        default_work_end: input.default_work_end,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('organization_id', id);
+    if (settingsError) return { data: null, error: settingsError.message };
+
+    return { data: data as Organization };
   }
 
   /**
@@ -96,6 +190,10 @@ class OrganizationService {
       id: orgId,
       name: input.name,
       slug: input.slug,
+      legal_name: input.legal_name || null,
+      email: input.email || null,
+      phone: input.phone || null,
+      website: input.website || null,
       logo_url: null,
       industry: 'Real Estate',
       country: input.country,

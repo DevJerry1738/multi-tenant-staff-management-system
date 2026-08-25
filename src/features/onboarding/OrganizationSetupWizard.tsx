@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   organizationService,
   MOCK_INVITATIONS,
 } from '@/lib/organizations/organizationService';
-import type { CreateOrganizationInput } from '@/lib/organizations/organizationService';
+import type { CreateOrganizationInput, UpdateOrganizationInput } from '@/lib/organizations/organizationService';
 import type { AttendanceMethod, OrganizationInvitation } from '@/types/database';
 import { useAuth } from '@/lib/auth/AuthContext';
 import {
@@ -74,10 +74,14 @@ function slugify(str: string): string {
 
 export const OrganizationSetupWizard: React.FC = () => {
   const navigate = useNavigate();
+  const { orgId } = useParams<{ orgId: string }>();
   const { user } = useAuth();
+  const isExistingOrganization = Boolean(orgId);
 
   const [step, setStep] = useState<WizardStep>(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingOrganization, setIsLoadingOrganization] = useState(isExistingOrganization);
+  const [isEditing, setIsEditing] = useState(!isExistingOrganization);
   const [formError, setFormError] = useState<string | null>(null);
   const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
   const [invitation, setInvitation] = useState<OrganizationInvitation | null>(null);
@@ -96,6 +100,38 @@ export const OrganizationSetupWizard: React.FC = () => {
   const [adminForm, setAdminForm] = useState<AdminForm>({
     first_name: '', last_name: '', email: '',
   });
+
+  useEffect(() => {
+    if (!orgId) return;
+
+    const loadOrganization = async () => {
+      const organization = await organizationService.getOrganizationById(orgId);
+      const settings = await organizationService.getOrganizationSettings(orgId);
+      if (!organization) {
+        setFormError('Organization not found.');
+        setIsLoadingOrganization(false);
+        return;
+      }
+
+      setOrgInfo({
+        name: organization.name,
+        legal_name: organization.legal_name ?? '',
+        email: organization.email ?? '',
+        phone: organization.phone ?? '',
+        website: organization.website ?? '',
+        country: organization.country ?? 'United States',
+        timezone: organization.timezone ?? 'UTC',
+      });
+      setOrgSettings({
+        attendance_method: settings?.attendance_method ?? 'platform_clocking',
+        default_work_start: settings?.default_work_start?.slice(0, 5) ?? '09:00',
+        default_work_end: settings?.default_work_end?.slice(0, 5) ?? '17:00',
+      });
+      setIsLoadingOrganization(false);
+    };
+
+    loadOrganization();
+  }, [orgId]);
 
   // ── Step Validation ──────────────────────────────────────────────────────
   const validateStep = (): string | null => {
@@ -182,6 +218,77 @@ export const OrganizationSetupWizard: React.FC = () => {
     setStep(5);
   };
 
+  const handleUpdate = async () => {
+    if (!orgId) return;
+    setIsSubmitting(true);
+    setFormError(null);
+
+    const input: UpdateOrganizationInput = {
+      name: orgInfo.name.trim(),
+      legal_name: orgInfo.legal_name.trim(),
+      slug: slugify(orgInfo.name.trim()),
+      email: orgInfo.email.trim(),
+      phone: orgInfo.phone.trim(),
+      website: orgInfo.website.trim(),
+      country: orgInfo.country,
+      timezone: orgInfo.timezone,
+      attendance_method: orgSettings.attendance_method,
+      default_work_start: orgSettings.default_work_start,
+      default_work_end: orgSettings.default_work_end,
+    };
+
+    const { error } = await organizationService.updateOrganization(orgId, input);
+    setIsSubmitting(false);
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    setIsEditing(false);
+  };
+
+  if (isLoadingOrganization) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-sm text-slate-500">Loading organization...</div>;
+  }
+
+  if (isExistingOrganization && formError && !isEditing) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-sm text-rose-600">{formError}</div>;
+  }
+
+  if (isExistingOrganization && !isEditing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50/30 flex items-start justify-center py-10 px-4">
+        <div className="w-full max-w-2xl">
+          <div className="flex items-start justify-between mb-8">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Organization Details</p>
+              <h1 className="text-2xl font-extrabold text-slate-900 mt-1">{orgInfo.name}</h1>
+              <p className="text-sm text-slate-500 mt-1">Review organization information and operational settings.</p>
+            </div>
+            <Button onClick={() => setIsEditing(true)} className="bg-indigo-600 hover:bg-indigo-500 text-white" size="sm">Edit Organization</Button>
+          </div>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-lg divide-y divide-slate-100">
+            <DetailSection title="Organization">
+              <DetailRow label="Name" value={orgInfo.name} />
+              <DetailRow label="Legal Name" value={orgInfo.legal_name || 'Not provided'} />
+              <DetailRow label="Email" value={orgInfo.email || 'Not provided'} />
+              <DetailRow label="Phone" value={orgInfo.phone || 'Not provided'} />
+              <DetailRow label="Website" value={orgInfo.website || 'Not provided'} />
+              <DetailRow label="Country" value={orgInfo.country} />
+              <DetailRow label="Timezone" value={orgInfo.timezone} />
+            </DetailSection>
+            <DetailSection title="Settings">
+              <DetailRow label="Attendance Method" value={orgSettings.attendance_method === 'platform_clocking' ? 'Platform Clocking' : 'Biometric Import'} />
+              <DetailRow label="Default Work Hours" value={`${orgSettings.default_work_start} - ${orgSettings.default_work_end}`} />
+            </DetailSection>
+            <div className="px-6 py-4 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => navigate('/organizations')}>Back to Organizations</Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Progress Indicator ───────────────────────────────────────────────────
   const StepIndicator = () => (
     <div className="flex items-center justify-center gap-0 mb-8">
@@ -223,8 +330,8 @@ export const OrganizationSetupWizard: React.FC = () => {
           <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-bold text-lg mx-auto mb-3 shadow-lg">
             MT
           </div>
-          <h1 className="text-2xl font-extrabold text-slate-900">Provision New Organization</h1>
-          <p className="text-sm text-slate-500 mt-1">Set up a new tenant organization and invite the initial administrator.</p>
+          <h1 className="text-2xl font-extrabold text-slate-900">{isExistingOrganization ? 'Edit Organization' : 'Provision New Organization'}</h1>
+          <p className="text-sm text-slate-500 mt-1">{isExistingOrganization ? 'Update organization information and operational settings.' : 'Set up a new tenant organization and invite the initial administrator.'}</p>
         </div>
 
         <StepIndicator />
@@ -326,7 +433,7 @@ export const OrganizationSetupWizard: React.FC = () => {
             )}
 
             {/* ── STEP 3: Initial Admin ── */}
-            {step === 3 && (
+            {!isExistingOrganization && step === 3 && (
               <>
                 <div>
                   <h2 className="text-base font-bold text-slate-900">Step 3 of 4 — Initial Organization Administrator</h2>
@@ -364,7 +471,7 @@ export const OrganizationSetupWizard: React.FC = () => {
             )}
 
             {/* ── STEP 4: Review ── */}
-            {step === 4 && (
+            {!isExistingOrganization && step === 4 && (
               <>
                 <div>
                   <h2 className="text-base font-bold text-slate-900">Step 4 of 4 — Review & Confirm</h2>
@@ -472,13 +579,25 @@ export const OrganizationSetupWizard: React.FC = () => {
                 </Button>
               )}
 
-              {step < 4 && (
+              {isExistingOrganization && step === 1 && (
                 <Button onClick={handleNext} size="sm" className="bg-indigo-600 hover:bg-indigo-500 text-white">
                   Continue <ChevronRight size={14} className="ml-1" />
                 </Button>
               )}
 
-              {step === 4 && (
+              {isExistingOrganization && step === 2 && (
+                <Button onClick={handleUpdate} size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white" disabled={isSubmitting}>
+                  {isSubmitting ? 'Saving...' : 'Save Changes'}
+                </Button>
+              )}
+
+              {!isExistingOrganization && step < 4 && (
+                <Button onClick={handleNext} size="sm" className="bg-indigo-600 hover:bg-indigo-500 text-white">
+                  Continue <ChevronRight size={14} className="ml-1" />
+                </Button>
+              )}
+
+              {!isExistingOrganization && step === 4 && (
                 <Button onClick={handleCreate} size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white" disabled={isSubmitting}>
                   {isSubmitting ? 'Creating…' : 'Create Organization & Send Invitation'}
                 </Button>
@@ -497,4 +616,18 @@ const ReviewRow: React.FC<{ label: string; value: string; mono?: boolean }> = ({
     <div className="text-slate-400 font-semibold">{label}</div>
     <div className={`text-slate-900 font-semibold ${mono ? 'font-mono' : ''}`}>{value}</div>
   </>
+);
+
+const DetailSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <section className="px-6 py-5">
+    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">{title}</h2>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">{children}</div>
+  </section>
+);
+
+const DetailRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div>
+    <div className="text-xs font-semibold text-slate-400">{label}</div>
+    <div className="text-sm font-semibold text-slate-900 break-words">{value}</div>
+  </div>
 );

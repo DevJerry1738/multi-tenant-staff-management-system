@@ -29,6 +29,10 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  legal_name: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
   logo_url: string | null;
   industry: string | null;
   country: string | null;
