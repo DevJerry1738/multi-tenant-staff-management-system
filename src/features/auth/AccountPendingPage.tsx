@@ -24,6 +24,20 @@ export const AccountPendingPage: React.FC = () => {
     }
   }, [membershipStatus, isPlatformAdmin, navigate]);
 
+  if (membershipStatus === 'loading') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-extrabold text-xl shadow-xl shadow-indigo-900/50 animate-pulse">
+            MT
+          </div>
+          <div className="w-8 h-8 border-2 border-indigo-400/30 border-t-indigo-400 rounded-full animate-spin" />
+          <span className="text-xs font-semibold text-indigo-300/70 tracking-wide">Resolving organization...</span>
+        </div>
+      </div>
+    );
+  }
+
   const handleSignOut = async () => {
     await logout();
     navigate('/login', { replace: true });
