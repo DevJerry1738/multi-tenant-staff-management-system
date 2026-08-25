@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
 import { MOCK_AUDIT_LOGS } from '@/lib/tenant/mockData';
 import type { AuditLog } from '@/types/database';
 
@@ -28,14 +28,18 @@ class AuditService {
       metadata: params.metadata || { timestamp: new Date().toISOString() },
     };
 
+    if (!isSupabaseConfigured) {
+      this.logToMock(params);
+      return;
+    }
+
     try {
       const { error } = await supabase.from('audit_logs').insert([auditRecord]);
       if (error) {
-        // Fallback to mock logging for local preview
-        this.logToMock(params);
+        console.error('Unable to write audit event.', error);
       }
-    } catch {
-      this.logToMock(params);
+    } catch (error) {
+      console.error('Unable to write audit event.', error);
     }
   }
 
@@ -64,6 +68,10 @@ class AuditService {
   }
 
   async getAuditLogs(orgId: string): Promise<AuditLog[]> {
+    if (!isSupabaseConfigured) {
+      return MOCK_AUDIT_LOGS[orgId] || [];
+    }
+
     try {
       const { data, error } = await supabase
         .from('audit_logs')
@@ -71,12 +79,17 @@ class AuditService {
         .eq('organization_id', orgId)
         .order('created_at', { ascending: false });
 
-      if (error || !data || data.length === 0) {
-        return MOCK_AUDIT_LOGS[orgId] || [];
+      if (error) {
+        console.error('Unable to load audit logs.', error);
+        return [];
+      }
+      if (!data) {
+        return [];
       }
       return data;
-    } catch {
-      return MOCK_AUDIT_LOGS[orgId] || [];
+    } catch (error) {
+      console.error('Unable to load audit logs.', error);
+      return [];
     }
   }
 }

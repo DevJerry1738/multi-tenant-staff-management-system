@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
 import { MOCK_STAFF, MOCK_DEPARTMENTS, MOCK_ANNOUNCEMENTS } from '@/lib/tenant/mockData';
 import { MOCK_INVITATIONS } from '@/lib/organizations/organizationService';
 import type { StaffProfile, Department, Team, EmploymentType, EmploymentStatus } from '@/types/database';
@@ -265,12 +265,11 @@ class StaffService {
 
     // ── Mode A vs Mode B: Determine account access status ──────────────────
     const createLogin = !!input.createLoginAccount;
-    const memberId = createLogin ? `mem-${Date.now()}` : null;
 
     const newStaff: StaffProfile = {
-      id: `staff-${Date.now()}`,
+      id: crypto.randomUUID(),
       organization_id: orgId,
-      organization_member_id: memberId,
+      organization_member_id: null,
       employee_number: empNum,
       first_name: input.first_name,
       middle_name: input.middle_name || null,
@@ -296,23 +295,44 @@ class StaffService {
     };
 
     // Attempt Supabase DB Insert
-    try {
-      const { data, error } = await supabase.from('staff_profiles').insert([newStaff]).select().single();
-      if (error) {
-        this.saveToMock(orgId, newStaff);
-      } else if (data) {
-        newStaff.id = data.id;
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.from('staff_profiles').insert([newStaff]).select().single();
+        if (error || !data) {
+          return { data: null, error: error?.message || 'Unable to create staff profile.' };
+        }
+        Object.assign(newStaff, data);
+      } catch (error) {
+        return { data: null, error: error instanceof Error ? error.message : 'Unable to create staff profile.' };
       }
-    } catch {
+    }
+
+    if (!isSupabaseConfigured) {
       this.saveToMock(orgId, newStaff);
     }
 
+    if (createLogin && isSupabaseConfigured) {
+      const { data: invitation, error: invitationError } = await supabase.functions.invoke('invite-staff', {
+        body: {
+          staff_profile_id: newStaff.id,
+          organization_id: orgId,
+          email: input.email,
+          role_name: input.assignedRoleName || 'Staff',
+        },
+      });
+      if (invitationError || !invitation?.success) {
+        return { data: null, error: invitationError?.message || invitation?.error || 'Unable to send staff invitation.' };
+      }
+      newStaff.organization_member_id = invitation.membership_id;
+    }
+
     // ── Mode B: Generate portal invitation ─────────────────────────────────
-    if (createLogin && memberId) {
+    if (createLogin && !isSupabaseConfigured) {
+      const invitationId = crypto.randomUUID();
       const token = `inv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       MOCK_INVITATIONS.push({
-        id: `inv-staff-${Date.now()}`,
+        id: invitationId,
         organization_id: orgId,
         email: input.email.toLowerCase().trim(),
         role_id: input.assignedRoleId || `role-${orgId}-staff`,
@@ -338,7 +358,7 @@ class StaffService {
         actorMemberId,
         action: 'staff.invited',
         resourceType: 'organization_invitations',
-        resourceId: memberId,
+        resourceId: invitationId,
         newValues: { email: newStaff.email, role: input.assignedRoleName || 'Staff' },
       });
     }
@@ -579,14 +599,20 @@ class StaffService {
   // ── PRIVATE HELPERS ─────────────────────────────────────────────────────────
 
   private async getAllStaffProfiles(orgId: string): Promise<StaffProfile[]> {
+    if (!isSupabaseConfigured) {
+      return MOCK_STAFF[orgId] || [];
+    }
+
     try {
       const { data, error } = await supabase.from('staff_profiles').select('*').eq('organization_id', orgId);
-      if (error || !data || data.length === 0) {
-        return MOCK_STAFF[orgId] || [];
+      if (error) {
+        console.error('Unable to load staff profiles.', error);
+        return [];
       }
-      return data;
-    } catch {
-      return MOCK_STAFF[orgId] || [];
+      return data ?? [];
+    } catch (error) {
+      console.error('Unable to load staff profiles.', error);
+      return [];
     }
   }
 

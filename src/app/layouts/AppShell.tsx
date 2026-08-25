@@ -79,9 +79,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
     navigate('/login');
   };
 
-  const visibleNav = SIDEBAR_NAV.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  );
+  const visibleNav = isPlatformAdmin
+    ? []
+    : SIDEBAR_NAV.filter((item) => !item.permission || hasPermission(item.permission));
 
   const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const initials = displayName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
@@ -188,23 +188,24 @@ export const AppShell: React.FC<AppShellProps> = ({ children }) => {
           }`}
         >
           <div className="p-3 space-y-3 overflow-y-auto">
-            {/* Org & Role Banner */}
-            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80">
-              <div className="flex items-center gap-2">
-                <Building2 size={14} className="text-indigo-500 shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Organization</div>
-                  <div className="text-xs font-bold text-slate-900 truncate">{activeOrganization?.name}</div>
+            {!isPlatformAdmin && (
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200/80">
+                <div className="flex items-center gap-2">
+                  <Building2 size={14} className="text-indigo-500 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Organization</div>
+                    <div className="text-xs font-bold text-slate-900 truncate">{activeOrganization?.name}</div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {activeRoles.map((role) => (
+                    <Badge key={role.id} variant="secondary" className="text-[9px] py-0 px-1.5">
+                      {role.name}
+                    </Badge>
+                  ))}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1 mt-2">
-                {activeRoles.map((role) => (
-                  <Badge key={role.id} variant="secondary" className="text-[9px] py-0 px-1.5">
-                    {role.name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
+            )}
 
             {/* Permission-filtered Navigation */}
             <nav className="space-y-0.5">
