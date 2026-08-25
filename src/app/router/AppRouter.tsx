@@ -65,7 +65,13 @@ export const AppRouter: React.FC = () => {
 
       {/* ── Public routes ──────────────────────────────────────────────────── */}
       <Route path="/login"              element={<LoginPage />} />
-      <Route path="/organizations/create" element={<OrganizationSetupWizard />} />
+      <Route path="/organizations/create" element={
+        <ProtectedRoute>
+          <RequirePlatformAdmin>
+            <OrganizationSetupWizard />
+          </RequirePlatformAdmin>
+        </ProtectedRoute>
+      } />
       <Route path="/forgot-password"    element={<ForgotPasswordPage />} />
       <Route path="/reset-password"     element={<ResetPasswordPage />} />
       <Route path="/accept-invitation"  element={<AcceptInvitationPage />} />
