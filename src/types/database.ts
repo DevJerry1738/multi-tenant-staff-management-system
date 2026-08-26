@@ -125,6 +125,7 @@ export interface StaffProfile {
 export interface OrganizationInvitation {
   id: string;
   organization_id: string;
+  staff_profile_id?: string | null;
   email: string;
   role_id: string;
   role_name: string;

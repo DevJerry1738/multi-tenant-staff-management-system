@@ -41,9 +41,13 @@ export const AcceptInvitationPage: React.FC = () => {
       }
 
       setInvitation(inv);
-      const org = MOCK_ORGANIZATIONS.find((o) => o.id === inv.organization_id);
-      setOrgName(org?.name || 'Your Organization');
-      setPageState('form');
+      organizationService.getOrganizationById(inv.organization_id).then((org) => {
+        setOrgName(org?.name || 'Your Organization');
+        setPageState('form');
+      }).catch(() => {
+        setOrgName('Your Organization');
+        setPageState('form');
+      });
     });
   }, [token]);
 

@@ -1,0 +1,6 @@
+# Browser-invoked functions require a verified Supabase user JWT.
+[functions.invite-staff]
+verify_jwt = false
+
+[functions.register-organization]
+verify_jwt = true

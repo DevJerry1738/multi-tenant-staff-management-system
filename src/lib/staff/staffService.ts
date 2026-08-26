@@ -312,18 +312,57 @@ class StaffService {
     }
 
     if (createLogin && isSupabaseConfigured) {
-      const { data: invitation, error: invitationError } = await supabase.functions.invoke('invite-staff', {
-        body: {
-          staff_profile_id: newStaff.id,
-          organization_id: orgId,
-          email: input.email,
-          role_name: input.assignedRoleName || 'Staff',
-        },
-      });
-      if (invitationError || !invitation?.success) {
-        return { data: null, error: invitationError?.message || invitation?.error || 'Unable to send staff invitation.' };
+      const { data: sessionData } = await supabase.auth.getSession();
+
+      if (!sessionData.session?.access_token) {
+        // No active session — cannot create invitation
+        await supabase
+          .from('staff_profiles')
+          .update({ account_access_status: 'no_account', updated_at: new Date().toISOString() })
+          .eq('id', newStaff.id);
+        return { data: null, error: 'Your session has expired. Please sign in again and retry.' };
       }
-      newStaff.organization_member_id = invitation.membership_id;
+
+      try {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-staff`, {
+          method: 'POST',
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${sessionData.session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            staff_profile_id: newStaff.id,
+            organization_id: orgId,
+            email: input.email,
+            role_name: input.assignedRoleName || 'Staff',
+          }),
+        });
+
+        const invitation = await response.json().catch(() => null);
+
+        if (!response.ok || !invitation?.success) {
+          // Edge Function call failed — roll back the staff profile to no_account
+          // so the UI does not show a misleading "Invitation Pending" status
+          await supabase
+            .from('staff_profiles')
+            .update({ account_access_status: 'no_account', updated_at: new Date().toISOString() })
+            .eq('id', newStaff.id);
+          const edgeError = invitation?.error ?? `Invitation service returned ${response.status}`;
+          return { data: null, error: `Staff profile created but invitation failed: ${edgeError}` };
+        }
+
+        // Success — Edge Function created the auth user, membership, role, and invitation record
+        newStaff.organization_member_id = invitation.membership_id ?? null;
+        newStaff.account_access_status = 'invited';
+      } catch (fetchErr) {
+        // Network error reaching the Edge Function — roll back
+        await supabase
+          .from('staff_profiles')
+          .update({ account_access_status: 'no_account', updated_at: new Date().toISOString() })
+          .eq('id', newStaff.id);
+        return { data: null, error: 'Could not reach the invitation service. Please check your connection and retry.' };
+      }
     }
 
     // ── Mode B: Generate portal invitation ─────────────────────────────────

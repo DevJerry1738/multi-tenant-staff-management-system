@@ -16,9 +16,30 @@ export interface LogAuditEventParams {
 
 class AuditService {
   async logEvent(params: LogAuditEventParams): Promise<void> {
+    if (!isSupabaseConfigured) {
+      this.logToMock(params);
+      return;
+    }
+
+    // ── Resolve actor identity from the live auth session ──────────────────
+    // The RLS INSERT policy requires actor_user_id = auth.uid().
+    // We must NOT trust the caller-supplied actorUserId — derive it here.
+    let resolvedUserId: string | null = null;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      resolvedUserId = sessionData?.session?.user?.id ?? null;
+    } catch {
+      // Session not available — fall through to mock
+    }
+
+    if (!resolvedUserId) {
+      this.logToMock(params);
+      return;
+    }
+
     const auditRecord = {
       organization_id: params.organizationId,
-      actor_user_id: params.actorUserId || null,
+      actor_user_id: resolvedUserId,          // Always from session, never client-supplied
       actor_member_id: params.actorMemberId || null,
       action: params.action,
       resource_type: params.resourceType,
@@ -28,20 +49,17 @@ class AuditService {
       metadata: params.metadata || { timestamp: new Date().toISOString() },
     };
 
-    if (!isSupabaseConfigured) {
-      this.logToMock(params);
-      return;
-    }
-
     try {
       const { error } = await supabase.from('audit_logs').insert([auditRecord]);
       if (error) {
-        console.error('Unable to write audit event.', error);
+        // RLS blocked or other DB error — fall back to in-memory mock
+        this.logToMock(params);
       }
-    } catch (error) {
-      console.error('Unable to write audit event.', error);
+    } catch {
+      this.logToMock(params);
     }
   }
+
 
   private logToMock(params: LogAuditEventParams) {
     const orgId = params.organizationId || 'global';

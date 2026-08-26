@@ -313,9 +313,39 @@ class OrganizationService {
   }
 
   /**
-   * Fetches an invitation by token.
+   * Fetches an invitation by token from Supabase DB (or mock fallback).
    */
   async getInvitationByToken(token: string): Promise<OrganizationInvitation | null> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from('organization_invitations')
+          .select('*, roles(name)')
+          .eq('token_hash', token)
+          .is('accepted_at', null)
+          .maybeSingle();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            organization_id: data.organization_id,
+            staff_profile_id: data.staff_profile_id,
+            email: data.email,
+            role_id: data.role_id,
+            role_name: (data as any).roles?.name || 'Staff',
+            invited_by: data.invited_by,
+            token: data.token_hash,
+            expires_at: data.expires_at,
+            accepted_at: data.accepted_at,
+            created_at: data.created_at,
+          };
+        }
+      } catch (err) {
+        console.error('Database query for invitation failed:', err);
+      }
+    }
+
+    // Mock fallback
     const inv = MOCK_INVITATIONS.find((i) => i.token === token && !i.accepted_at);
     return inv || null;
   }
@@ -323,13 +353,90 @@ class OrganizationService {
   /**
    * Accepts an invitation and provisions authentication membership.
    */
-  async acceptInvitation(token: string, _password: string): Promise<{ success: boolean; email?: string; error?: string }> {
+  async acceptInvitation(token: string, password?: string): Promise<{ success: boolean; email?: string; error?: string }> {
     const inv = await this.getInvitationByToken(token);
     if (!inv) {
       return { success: false, error: 'Invitation link is invalid or has already been accepted.' };
     }
 
-    inv.accepted_at = new Date().toISOString();
+    const nowIso = new Date().toISOString();
+
+    if (isSupabaseConfigured) {
+      try {
+        // 1. Mark invitation as accepted in Supabase DB
+        await supabase
+          .from('organization_invitations')
+          .update({ accepted_at: nowIso })
+          .eq('id', inv.id);
+
+        // 2. Update staff profile account_access_status to 'active'
+        if (inv.staff_profile_id) {
+          await supabase
+            .from('staff_profiles')
+            .update({ account_access_status: 'active', updated_at: nowIso })
+            .eq('id', inv.staff_profile_id);
+        } else {
+          await supabase
+            .from('staff_profiles')
+            .update({ account_access_status: 'active', updated_at: nowIso })
+            .eq('organization_id', inv.organization_id)
+            .ilike('email', inv.email);
+        }
+
+        // 3. Update password if provided for currently logged-in user
+        if (password) {
+          await supabase.auth.updateUser({ password }).catch(() => null);
+        }
+
+        // 4. Ensure organization_members record exists
+        const { data: sessionData } = await supabase.auth.getSession();
+        const currentUserId = sessionData?.session?.user?.id;
+        if (currentUserId) {
+          const { data: existingMember } = await supabase
+            .from('organization_members')
+            .select('id')
+            .eq('organization_id', inv.organization_id)
+            .eq('user_id', currentUserId)
+            .maybeSingle();
+
+          let memberId = existingMember?.id;
+          if (!memberId) {
+            const { data: newMember } = await supabase
+              .from('organization_members')
+              .insert({
+                organization_id: inv.organization_id,
+                user_id: currentUserId,
+                status: 'active',
+              })
+              .select('id')
+              .maybeSingle();
+            if (newMember) memberId = newMember.id;
+          }
+
+          if (memberId && inv.role_id) {
+            try {
+              await supabase.from('member_roles').insert({
+                organization_member_id: memberId,
+                role_id: inv.role_id,
+              });
+            } catch {
+              // role may already be assigned — ignore duplicate
+            }
+
+            if (inv.staff_profile_id) {
+              await supabase
+                .from('staff_profiles')
+                .update({ organization_member_id: memberId })
+                .eq('id', inv.staff_profile_id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Accept invitation DB operation failed:', err);
+      }
+    }
+
+    inv.accepted_at = nowIso;
 
     await auditService.logEvent({
       organizationId: inv.organization_id,
