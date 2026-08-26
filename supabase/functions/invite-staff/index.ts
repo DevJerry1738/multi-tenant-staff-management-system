@@ -185,6 +185,50 @@ Deno.serve(async (request) => {
     roleId = newRole.id;
   }
 
+  const rolePermissionKeys: Record<string, string[]> = {
+    'Organization Admin': [
+      'staff.view', 'staff.create', 'staff.update', 'staff.archive',
+      'attendance.view', 'attendance.manage', 'attendance.import',
+      'leave.view', 'leave.request', 'leave.approve',
+      'documents.view', 'documents.upload', 'documents.delete',
+      'announcements.view', 'announcements.create', 'announcements.manage',
+      'reports.view', 'reports.export', 'audit_logs.view',
+      'organization.view', 'organization.update',
+      'departments.view', 'departments.create', 'departments.update', 'departments.archive',
+      'teams.view', 'teams.create', 'teams.update', 'teams.archive',
+      'roles.view', 'roles.create', 'roles.update', 'roles.delete',
+      'settings.view', 'settings.update',
+    ],
+    'HR Manager': [
+      'staff.view', 'staff.create', 'staff.update', 'staff.archive',
+      'attendance.view', 'attendance.manage', 'attendance.import',
+      'leave.view', 'leave.request', 'leave.approve',
+      'documents.view', 'documents.upload', 'documents.delete',
+      'announcements.view', 'announcements.create', 'reports.view', 'reports.export',
+    ],
+    Manager: [
+      'staff.view', 'attendance.view', 'attendance.manage',
+      'leave.view', 'leave.request', 'leave.approve',
+      'documents.view', 'announcements.view', 'reports.view',
+    ],
+    Staff: ['staff.view', 'attendance.view', 'leave.view', 'leave.request', 'documents.view', 'announcements.view'],
+  };
+  const permissionKeys = rolePermissionKeys[targetRoleName] ?? [];
+  const { data: permissions, error: permissionsError } = await admin
+    .from('permissions')
+    .select('id')
+    .in('key', permissionKeys);
+  if (permissionsError) return json({ error: `Could not load permissions for role "${targetRoleName}".` }, 500);
+  if (permissions && permissions.length > 0) {
+    const { error: permissionAssignmentError } = await admin
+      .from('role_permissions')
+      .upsert(
+        permissions.map((permission) => ({ role_id: roleId, permission_id: permission.id })),
+        { onConflict: 'role_id,permission_id', ignoreDuplicates: true },
+      );
+    if (permissionAssignmentError) return json({ error: 'Could not assign permissions to the selected role.' }, 500);
+  }
+
   // ── Invite via Supabase Auth Admin (uses Resend SMTP) ─────────────────────
   let invitedUserId: string | null = null;
   const cleanEmail = email.trim().toLowerCase();
