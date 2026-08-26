@@ -494,83 +494,34 @@ class OrganizationService {
       return { success: false, error: 'Invitation link is invalid or has already been accepted.' };
     }
 
-    const nowIso = new Date().toISOString();
-
-    if (isSupabaseConfigured) {
+    if (isSupabaseConfigured && password) {
       try {
-        // 1. Mark invitation as accepted in Supabase DB
-        await supabase
-          .from('organization_invitations')
-          .update({ accepted_at: nowIso })
-          .eq('id', inv.id);
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/accept-invitation`, {
+          method: 'POST',
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            token: token.trim(),
+            password: password,
+          }),
+        });
 
-        // 2. Update staff profile account_access_status to 'active'
-        if (inv.staff_profile_id) {
-          await supabase
-            .from('staff_profiles')
-            .update({ account_access_status: 'active', updated_at: nowIso })
-            .eq('id', inv.staff_profile_id);
-        } else {
-          await supabase
-            .from('staff_profiles')
-            .update({ account_access_status: 'active', updated_at: nowIso })
-            .eq('organization_id', inv.organization_id)
-            .ilike('email', inv.email);
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.success) {
+          return { success: false, error: result?.error || 'Failed to complete account activation.' };
         }
 
-        // 3. Update password if provided for currently logged-in user
-        if (password) {
-          await supabase.auth.updateUser({ password }).catch(() => null);
-        }
-
-        // 4. Ensure organization_members record exists
-        const { data: sessionData } = await supabase.auth.getSession();
-        const currentUserId = sessionData?.session?.user?.id;
-        if (currentUserId) {
-          const { data: existingMember } = await supabase
-            .from('organization_members')
-            .select('id')
-            .eq('organization_id', inv.organization_id)
-            .eq('user_id', currentUserId)
-            .maybeSingle();
-
-          let memberId = existingMember?.id;
-          if (!memberId) {
-            const { data: newMember } = await supabase
-              .from('organization_members')
-              .insert({
-                organization_id: inv.organization_id,
-                user_id: currentUserId,
-                status: 'active',
-              })
-              .select('id')
-              .maybeSingle();
-            if (newMember) memberId = newMember.id;
-          }
-
-          if (memberId && inv.role_id) {
-            try {
-              await supabase.from('member_roles').insert({
-                organization_member_id: memberId,
-                role_id: inv.role_id,
-              });
-            } catch {
-              // role may already be assigned — ignore duplicate
-            }
-
-            if (inv.staff_profile_id) {
-              await supabase
-                .from('staff_profiles')
-                .update({ organization_member_id: memberId })
-                .eq('id', inv.staff_profile_id);
-            }
-          }
-        }
+        inv.accepted_at = new Date().toISOString();
+        return { success: true, email: result.email || inv.email };
       } catch (err) {
-        console.error('Accept invitation DB operation failed:', err);
+        console.error('Accept invitation edge function call failed:', err);
+        return { success: false, error: 'Network error connecting to activation service. Please retry.' };
       }
     }
 
+    const nowIso = new Date().toISOString();
     inv.accepted_at = nowIso;
 
     await auditService.logEvent({
@@ -578,7 +529,7 @@ class OrganizationService {
       action: 'invitation.accepted',
       resourceType: 'organization_invitations',
       resourceId: inv.id,
-      newValues: { email: inv.email },
+      newValues: { email: inv.email, accepted_at: nowIso },
     });
 
     return { success: true, email: inv.email };
