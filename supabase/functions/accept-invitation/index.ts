@@ -2,6 +2,7 @@
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
@@ -123,10 +124,13 @@ Deno.serve(async (request) => {
 
     // 4. Assign Role
     if (membershipId && roleId) {
-      await admin
-        .from('member_roles')
-        .insert({ organization_member_id: membershipId, role_id: roleId })
-        .catch(() => undefined);
+      try {
+        await admin
+          .from('member_roles')
+          .insert({ organization_member_id: membershipId, role_id: roleId });
+      } catch {
+        // Ignore duplicate role assignment
+      }
     }
 
     // 5. Update Staff Profile (Link member & set status active)
@@ -159,15 +163,19 @@ Deno.serve(async (request) => {
       .eq('id', invitation.id);
 
     // 7. Audit Log
-    await admin.from('audit_logs').insert({
-      organization_id: orgId,
-      actor_user_id: authUserId,
-      actor_member_id: membershipId,
-      action: 'invitation.accepted',
-      resource_type: 'organization_invitations',
-      resource_id: invitation.id,
-      new_values: { email: email, accepted_at: nowIso },
-    }).catch(() => undefined);
+    try {
+      await admin.from('audit_logs').insert({
+        organization_id: orgId,
+        actor_user_id: authUserId,
+        actor_member_id: membershipId,
+        action: 'invitation.accepted',
+        resource_type: 'organization_invitations',
+        resource_id: invitation.id,
+        new_values: { email: email, accepted_at: nowIso },
+      });
+    } catch {
+      // Ignore audit log error
+    }
 
     console.log('[accept-invitation] Success for:', email);
     return json({ success: true, email: email });

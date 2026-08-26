@@ -233,7 +233,11 @@ export const AcceptInvitationPage: React.FC = () => {
               <Button
                 className="bg-indigo-600 hover:bg-indigo-500 text-white w-full"
                 size="sm"
-                onClick={() => navigate('/login')}
+                onClick={async () => {
+                  const { supabase } = await import('@/lib/supabase/client');
+                  await supabase.auth.signOut().catch(() => null);
+                  navigate('/login');
+                }}
               >
                 Go to Login
               </Button>
