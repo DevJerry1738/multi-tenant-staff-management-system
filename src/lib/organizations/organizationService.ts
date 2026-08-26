@@ -316,23 +316,35 @@ class OrganizationService {
    * Fetches an invitation by token from Supabase DB (or mock fallback).
    */
   async getInvitationByToken(token: string): Promise<OrganizationInvitation | null> {
+    if (!token) return null;
+
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase
           .from('organization_invitations')
-          .select('*, roles(name)')
+          .select('*')
           .eq('token_hash', token)
           .is('accepted_at', null)
           .maybeSingle();
 
         if (!error && data) {
+          let roleName = 'Staff';
+          if (data.role_id) {
+            const { data: roleData } = await supabase
+              .from('roles')
+              .select('name')
+              .eq('id', data.role_id)
+              .maybeSingle();
+            if (roleData?.name) roleName = roleData.name;
+          }
+
           return {
             id: data.id,
             organization_id: data.organization_id,
             staff_profile_id: data.staff_profile_id,
             email: data.email,
             role_id: data.role_id,
-            role_name: (data as any).roles?.name || 'Staff',
+            role_name: roleName,
             invited_by: data.invited_by,
             token: data.token_hash,
             expires_at: data.expires_at,
@@ -348,6 +360,129 @@ class OrganizationService {
     // Mock fallback
     const inv = MOCK_INVITATIONS.find((i) => i.token === token && !i.accepted_at);
     return inv || null;
+  }
+
+  /**
+   * Generates a fully qualified URL for accepting an invitation token.
+   */
+  getInvitationLink(token: string): string {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://multi-tenant-staff-management-syste.vercel.app';
+    return `${origin}/accept-invitation?token=${token}`;
+  }
+
+  /**
+   * Retrieves the active (unaccepted) invitation token for a specific staff member.
+   */
+  async getInvitationForStaff(staffProfileId: string, orgId: string): Promise<OrganizationInvitation | null> {
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase
+          .from('organization_invitations')
+          .select('*')
+          .eq('organization_id', orgId)
+          .eq('staff_profile_id', staffProfileId)
+          .is('accepted_at', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            organization_id: data.organization_id,
+            staff_profile_id: data.staff_profile_id,
+            email: data.email,
+            role_id: data.role_id,
+            role_name: 'Staff',
+            invited_by: data.invited_by,
+            token: data.token_hash,
+            expires_at: data.expires_at,
+            accepted_at: data.accepted_at,
+            created_at: data.created_at,
+          };
+        }
+      } catch (err) {
+        console.error('Error fetching invitation for staff:', err);
+      }
+    }
+
+    const mock = MOCK_INVITATIONS.find(
+      (i) => i.organization_id === orgId && (i.staff_profile_id === staffProfileId || i.id === staffProfileId) && !i.accepted_at
+    );
+    return mock || null;
+  }
+
+  /**
+   * Generates or fetches an active invitation link for a staff member.
+   */
+  async getStaffInvitationLink(staffProfileId: string, orgId: string, email?: string): Promise<{ link: string; token: string } | null> {
+    let inv = await this.getInvitationForStaff(staffProfileId, orgId);
+
+    // If no existing token found, check by email
+    if (!inv && email && isSupabaseConfigured) {
+      try {
+        const { data } = await supabase
+          .from('organization_invitations')
+          .select('*')
+          .eq('organization_id', orgId)
+          .ilike('email', email.trim())
+          .is('accepted_at', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (data) {
+          inv = {
+            id: data.id,
+            organization_id: data.organization_id,
+            staff_profile_id: data.staff_profile_id,
+            email: data.email,
+            role_id: data.role_id,
+            role_name: 'Staff',
+            invited_by: data.invited_by,
+            token: data.token_hash,
+            expires_at: data.expires_at,
+            accepted_at: data.accepted_at,
+            created_at: data.created_at,
+          };
+        }
+      } catch {}
+    }
+
+    if (inv?.token) {
+      return { token: inv.token, link: this.getInvitationLink(inv.token) };
+    }
+
+    // If still no invitation exists, create a fresh token
+    if (isSupabaseConfigured && email) {
+      try {
+        const newToken = `inv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data: sessionData } = await supabase.auth.getSession();
+        
+        // Find default role
+        const { data: role } = await supabase.from('roles').select('id').eq('organization_id', orgId).limit(1).maybeSingle();
+
+        if (role?.id) {
+          await supabase.from('organization_invitations').insert({
+            organization_id: orgId,
+            staff_profile_id: staffProfileId,
+            email: email.trim().toLowerCase(),
+            role_id: role.id,
+            invited_by: sessionData?.session?.user?.id || 'system',
+            token_hash: newToken,
+            expires_at: expiresAt,
+          });
+
+          await supabase.from('staff_profiles').update({ account_access_status: 'invited' }).eq('id', staffProfileId);
+
+          return { token: newToken, link: this.getInvitationLink(newToken) };
+        }
+      } catch (err) {
+        console.error('Failed to create invitation link:', err);
+      }
+    }
+
+    return null;
   }
 
   /**

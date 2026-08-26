@@ -8,6 +8,7 @@ import { StaffFormModal } from './StaffFormModal';
 import { DeactivateStaffModal } from './DeactivateStaffModal';
 import { PermissionGuard } from '@/components/common/PermissionGuard';
 import { Card, CardHeader, CardTitle, CardContent, Badge, Button } from '@/components/ui';
+import { organizationService } from '@/lib/organizations/organizationService';
 import {
   ArrowLeft,
   Mail,
@@ -24,6 +25,10 @@ import {
   Briefcase,
   Clock,
   Lock,
+  Link2,
+  Copy,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 
 export const StaffDetailPage: React.FC = () => {
@@ -42,6 +47,10 @@ export const StaffDetailPage: React.FC = () => {
   const [team, setTeam] = useState<Team | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+
+  // Invitation link state
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<
@@ -66,6 +75,15 @@ export const StaffDetailPage: React.FC = () => {
 
     setStaff(profile);
 
+    // If staff has pending invitation, fetch/generate link
+    if (profile.account_access_status === 'invited') {
+      organizationService.getStaffInvitationLink(profile.id, orgId, profile.email).then((res) => {
+        if (res?.link) setInviteLink(res.link);
+      });
+    } else {
+      setInviteLink(null);
+    }
+
     // Fetch related labels
     if (profile.manager_id) {
       const mgr = await staffService.getStaffProfileById(profile.manager_id, orgId);
@@ -87,6 +105,13 @@ export const StaffDetailPage: React.FC = () => {
     loadProfile();
   }, [staffId, orgId]);
 
+  const handleCopyLink = () => {
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 3000);
+  };
+
   if (loading) {
     return (
       <StaffLayout>
@@ -100,13 +125,13 @@ export const StaffDetailPage: React.FC = () => {
   if (notFound || !staff) {
     return (
       <StaffLayout>
-        <div className="p-12 text-center bg-white rounded-xl border border-slate-200 space-y-4">
-          <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center mx-auto text-rose-600">
-            <Lock size={24} />
+        <div className="py-16 text-center space-y-4 max-w-md mx-auto">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto">
+            <UserX size={24} />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-900">Staff Member Not Found</h2>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+            <h3 className="text-base font-bold text-slate-900">Staff Member Not Found</h3>
+            <p className="text-xs text-slate-500 mt-1">
               This staff profile does not exist or does not belong to your organization. Multi-tenant access controls have blocked this request.
             </p>
           </div>
@@ -128,6 +153,19 @@ export const StaffDetailPage: React.FC = () => {
           </Button>
 
           <div className="flex items-center gap-2">
+            {/* Copy Invitation Link button if pending */}
+            {inviteLink && (
+              <Button
+                size="sm"
+                variant={copiedLink ? 'default' : 'outline'}
+                onClick={handleCopyLink}
+                className={`text-xs ${copiedLink ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100'}`}
+              >
+                {copiedLink ? <Check size={14} className="mr-1.5" /> : <Link2 size={14} className="mr-1.5" />}
+                {copiedLink ? 'Link Copied!' : 'Copy Confirmation Link'}
+              </Button>
+            )}
+
             <PermissionGuard permission="staff.update">
               <Button size="sm" variant="outline" onClick={() => setEditModalOpen(true)}>
                 <Edit2 size={14} className="mr-1.5" /> Edit Profile
@@ -324,22 +362,71 @@ export const StaffDetailPage: React.FC = () => {
         )}
 
         {activeTab === 'account' && (
-          <Card className="border-slate-200">
-            <CardHeader className="pb-2"><CardTitle className="text-xs uppercase font-bold text-slate-400">User Account Association</CardTitle></CardHeader>
-            <CardContent className="space-y-3 text-xs">
-              <div>
-                <span className="text-slate-400 block text-[10px]">Account Link Status</span>
-                {staff.organization_member_id ? (
-                  <Badge variant="success" className="mt-1">Linked to Organization Member Account ({staff.organization_member_id})</Badge>
-                ) : (
-                  <Badge variant="outline" className="mt-1 border-slate-200 text-slate-500">No Login Account Linked Yet</Badge>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Staff records can exist independently before a login account is provisioned for tenant access.
-              </p>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            {inviteLink && (
+              <Card className="border-amber-200 bg-amber-50/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xs uppercase font-bold text-amber-800 flex items-center gap-1.5">
+                    <Link2 size={14} /> Pending Account Setup & Confirmation Link
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-xs">
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    This staff member has a pending account invitation. If they have not received the invitation email or if email rate limits applied, you can provide this confirmation link directly:
+                  </p>
+
+                  <div className="p-3 bg-white border border-amber-200 rounded-xl shadow-xs">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={inviteLink}
+                        className="bg-slate-50 border border-slate-200 text-slate-800 text-xs px-3 py-2 rounded-lg w-full font-mono select-all focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      />
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={handleCopyLink}
+                        className={`shrink-0 flex items-center gap-1.5 text-xs font-semibold ${
+                          copiedLink ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''
+                        }`}
+                      >
+                        {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                        {copiedLink ? 'Copied!' : 'Copy Link'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => window.open(inviteLink, '_blank')}
+                        className="shrink-0 flex items-center gap-1 text-xs"
+                      >
+                        <ExternalLink size={13} /> Open
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            <Card className="border-slate-200">
+              <CardHeader className="pb-2"><CardTitle className="text-xs uppercase font-bold text-slate-400">User Account Association</CardTitle></CardHeader>
+              <CardContent className="space-y-3 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Account Link Status</span>
+                  {staff.organization_member_id ? (
+                    <Badge variant="success" className="mt-1">Linked to Organization Member Account ({staff.organization_member_id})</Badge>
+                  ) : staff.account_access_status === 'invited' ? (
+                    <Badge variant="outline" className="mt-1 border-amber-200 text-amber-700 bg-amber-50">Invitation Pending ({staff.email})</Badge>
+                  ) : (
+                    <Badge variant="outline" className="mt-1 border-slate-200 text-slate-500">No Login Account Linked Yet</Badge>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Staff records can exist independently before a login account is provisioned for tenant access.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
 

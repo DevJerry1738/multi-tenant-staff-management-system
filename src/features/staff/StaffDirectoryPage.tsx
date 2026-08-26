@@ -9,6 +9,7 @@ import { StaffFormModal } from './StaffFormModal';
 import { DeactivateStaffModal } from './DeactivateStaffModal';
 import { PermissionGuard } from '@/components/common/PermissionGuard';
 import { Card, CardContent, Badge, Button } from '@/components/ui';
+import { organizationService } from '@/lib/organizations/organizationService';
 import {
   Search,
   Filter,
@@ -25,12 +26,19 @@ import {
   Phone,
   Mail,
   UserCircle2,
+  Link2,
+  Copy,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 
 export const StaffDirectoryPage: React.FC = () => {
   const navigate = useNavigate();
   const { activeOrganization, activeRoles, hasPermission } = useTenant();
   const orgId = activeOrganization?.id || '';
+
+  const [copiedStaffId, setCopiedStaffId] = useState<string | null>(null);
+  const [activeInviteModal, setActiveInviteModal] = useState<{ name: string; email: string; link: string } | null>(null);
 
   // Determine user scope based on assigned roles
   const isAdminOrHR = activeRoles.some(
@@ -348,13 +356,33 @@ export const StaffDirectoryPage: React.FC = () => {
                           const status = staff.account_access_status || (staff.organization_member_id ? 'active' : 'no_account');
                           const cfg: Record<string, { label: string; cls: string }> = {
                             no_account:  { label: 'No Account',          cls: 'border-slate-200 text-slate-400 bg-slate-50' },
-                            invited:     { label: 'Invitation Pending',  cls: 'border-amber-200 text-amber-700 bg-amber-50' },
+                            invited:     { label: 'Invitation Pending',  cls: 'border-amber-200 text-amber-700 bg-amber-50 cursor-pointer hover:bg-amber-100 hover:border-amber-300' },
                             active:      { label: 'Active',              cls: 'border-emerald-300 text-emerald-700 bg-emerald-50' },
                             suspended:   { label: 'Suspended',           cls: 'border-rose-200 text-rose-600 bg-rose-50' },
                             deactivated: { label: 'Deactivated',         cls: 'border-slate-200 text-slate-400 bg-slate-50 line-through' },
                           };
                           const { label, cls } = cfg[status] || cfg.no_account;
-                          return <Badge variant="outline" className={`text-[9px] ${cls}`}>{label}</Badge>;
+                          return (
+                            <Badge
+                              variant="outline"
+                              onClick={async () => {
+                                if (status === 'invited') {
+                                  const res = await organizationService.getStaffInvitationLink(staff.id, orgId, staff.email);
+                                  if (res?.link) {
+                                    setActiveInviteModal({
+                                      name: `${staff.first_name} ${staff.last_name}`,
+                                      email: staff.email,
+                                      link: res.link,
+                                    });
+                                  }
+                                }
+                              }}
+                              title={status === 'invited' ? 'Click to view & copy invitation link' : undefined}
+                              className={`text-[9px] transition-colors ${cls}`}
+                            >
+                              {label}
+                            </Badge>
+                          );
                         })()}
                       </td>
 
@@ -362,6 +390,28 @@ export const StaffDirectoryPage: React.FC = () => {
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {/* Copy Invitation Link (If Invited) */}
+                          {staff.account_access_status === 'invited' && (
+                            <button
+                              onClick={async () => {
+                                const res = await organizationService.getStaffInvitationLink(staff.id, orgId, staff.email);
+                                if (res?.link) {
+                                  navigator.clipboard.writeText(res.link);
+                                  setCopiedStaffId(staff.id);
+                                  setTimeout(() => setCopiedStaffId(null), 3000);
+                                }
+                              }}
+                              title={copiedStaffId === staff.id ? 'Copied to clipboard!' : 'Copy Confirmation / Setup Link'}
+                              className={`p-1.5 rounded transition-colors ${
+                                copiedStaffId === staff.id
+                                  ? 'bg-emerald-50 text-emerald-600'
+                                  : 'hover:bg-amber-50 text-amber-600 hover:text-amber-700'
+                              }`}
+                            >
+                              {copiedStaffId === staff.id ? <Check size={14} /> : <Link2 size={14} />}
+                            </button>
+                          )}
+
                           {/* View Profile */}
                           <button
                             onClick={() => navigate(`/staff/${staff.id}`)}
@@ -400,6 +450,81 @@ export const StaffDirectoryPage: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Invitation Link Modal */}
+          {activeInviteModal && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <div className="p-6">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                        <Link2 size={16} />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Staff Confirmation Link</h3>
+                        <p className="text-[11px] text-slate-500">{activeInviteModal.name} ({activeInviteModal.email})</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveInviteModal(null)}
+                      className="p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      <UserX size={16} className="rotate-45" />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-slate-600 mb-3">
+                    Send this link to the staff member to complete their account setup and password configuration:
+                  </p>
+
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl mb-4">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={activeInviteModal.link}
+                        className="bg-white border border-slate-200 text-slate-700 text-xs px-3 py-2 rounded-lg w-full font-mono select-all focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => {
+                          navigator.clipboard.writeText(activeInviteModal.link);
+                          setCopiedStaffId('modal');
+                          setTimeout(() => setCopiedStaffId(null), 3000);
+                        }}
+                        className={`shrink-0 flex items-center gap-1.5 text-xs font-semibold ${
+                          copiedStaffId === 'modal' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''
+                        }`}
+                      >
+                        {copiedStaffId === 'modal' ? <Check size={14} /> : <Copy size={14} />}
+                        {copiedStaffId === 'modal' ? 'Copied!' : 'Copy'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(activeInviteModal.link, '_blank')}
+                      className="flex items-center gap-1 text-xs"
+                    >
+                      <ExternalLink size={13} /> Open Link
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setActiveInviteModal(null)}
+                      className="text-xs"
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Pagination Footer */}
           <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500">

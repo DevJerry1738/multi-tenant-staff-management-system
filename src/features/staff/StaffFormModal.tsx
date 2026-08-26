@@ -4,7 +4,7 @@ import { staffService } from '@/lib/staff/staffService';
 import type { CreateStaffInput } from '@/lib/staff/staffService';
 import type { StaffProfile, Department, Team, EmploymentType, EmploymentStatus } from '@/types/database';
 import { Button } from '@/components/ui';
-import { X, UserPlus, Save, AlertCircle, ShieldCheck, ShieldOff } from 'lucide-react';
+import { X, UserPlus, Save, AlertCircle, ShieldCheck, ShieldOff, Copy, CheckCircle2, Check, ExternalLink } from 'lucide-react';
 
 interface StaffFormModalProps {
   isOpen: boolean;
@@ -27,6 +27,10 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({
   const [managers, setManagers] = useState<StaffProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Success with invitation link state
+  const [createdInvitationLink, setCreatedInvitationLink] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Form State
   const [firstName, setFirstName] = useState('');
@@ -154,12 +158,97 @@ export const StaffFormModal: React.FC<StaffFormModalProps> = ({
         setError(res.error);
       } else {
         onSuccess();
-        onClose();
+        if (inputData.createLoginAccount && res.invitationLink) {
+          setCreatedInvitationLink(res.invitationLink);
+        } else {
+          onClose();
+        }
       }
     }
   };
 
+  const handleCopyLink = () => {
+    if (!createdInvitationLink) return;
+    navigator.clipboard.writeText(createdInvitationLink);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 3000);
+  };
+
   const filteredTeams = teams.filter((t) => !departmentId || t.department_id === departmentId);
+
+  // If invitation link view is active after Mode B creation
+  if (createdInvitationLink) {
+    return (
+      <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          <div className="p-6 text-center">
+            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+              <CheckCircle2 size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900">Staff Member Created!</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              The staff profile and account invitation were generated successfully. You can copy the confirmation link below directly:
+            </p>
+
+            <div className="mt-5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-left">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                Staff Confirmation & Setup Link
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={createdInvitationLink}
+                  className="bg-white border border-slate-200 text-slate-700 text-xs px-3 py-2 rounded-lg w-full font-mono select-all focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="default"
+                  onClick={handleCopyLink}
+                  className={`shrink-0 flex items-center gap-1.5 text-xs font-semibold ${
+                    copiedLink ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''
+                  }`}
+                >
+                  {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                  {copiedLink ? 'Copied!' : 'Copy'}
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 mt-3">
+              💡 Tip: You can also copy or retrieve this link anytime from the <strong>Staff Directory</strong> table or the employee's <strong>Profile Page</strong>.
+            </p>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  window.open(createdInvitationLink, '_blank');
+                }}
+                className="flex items-center gap-1 text-xs"
+              >
+                <ExternalLink size={13} /> Open Link
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setCreatedInvitationLink(null);
+                  onClose();
+                }}
+                className="text-xs"
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">

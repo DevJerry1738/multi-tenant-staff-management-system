@@ -245,7 +245,7 @@ class StaffService {
     input: CreateStaffInput,
     orgId: string,
     actorMemberId?: string
-  ): Promise<{ data: StaffProfile | null; error?: string }> {
+  ): Promise<{ data: StaffProfile | null; error?: string; invitationToken?: string; invitationLink?: string }> {
     // 1. Employee Number
     const empNum = input.employee_number || (await this.generateEmployeeNumber(orgId));
 
@@ -355,6 +355,9 @@ class StaffService {
         // Success — Edge Function created the auth user, membership, role, and invitation record
         newStaff.organization_member_id = invitation.membership_id ?? null;
         newStaff.account_access_status = 'invited';
+        if (invitation.token) {
+          (newStaff as any)._invitationToken = invitation.token;
+        }
       } catch (fetchErr) {
         // Network error reaching the Edge Function — roll back
         await supabase
@@ -365,14 +368,17 @@ class StaffService {
       }
     }
 
-    // ── Mode B: Generate portal invitation ─────────────────────────────────
+    // ── Mode B: Generate portal invitation (Mock) ───────────────────────────
+    let mockToken: string | undefined;
     if (createLogin && !isSupabaseConfigured) {
       const invitationId = crypto.randomUUID();
       const token = `inv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      mockToken = token;
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       MOCK_INVITATIONS.push({
         id: invitationId,
         organization_id: orgId,
+        staff_profile_id: newStaff.id,
         email: input.email.toLowerCase().trim(),
         role_id: input.assignedRoleId || `role-${orgId}-staff`,
         role_name: input.assignedRoleName || 'Staff',
@@ -418,7 +424,19 @@ class StaffService {
       },
     });
 
-    return { data: newStaff };
+    const activeToken = (newStaff as any)._invitationToken || mockToken;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://multi-tenant-staff-management-syste.vercel.app';
+    const invitationLink = activeToken ? `${origin}/accept-invitation?token=${activeToken}` : undefined;
+
+    return { data: newStaff, invitationToken: activeToken, invitationLink };
+  }
+
+  /**
+   * Retrieves the confirmation / invitation link for a staff member.
+   */
+  async getStaffInvitationLink(staffProfileId: string, orgId: string, email?: string): Promise<{ link: string; token: string } | null> {
+    const { organizationService } = await import('@/lib/organizations/organizationService');
+    return organizationService.getStaffInvitationLink(staffProfileId, orgId, email);
   }
 
   /**
