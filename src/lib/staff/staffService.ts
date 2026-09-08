@@ -472,10 +472,10 @@ class StaffService {
     try {
       const { error } = await supabase.from('staff_profiles').update(updated).eq('id', id);
       if (error) {
-        this.updateMock(orgId, updated);
+        return { data: null, error: error.message || 'Unable to update staff profile.' };
       }
-    } catch {
-      this.updateMock(orgId, updated);
+    } catch (error) {
+      return { data: null, error: error instanceof Error ? error.message : 'Unable to update staff profile.' };
     }
 
     // Audit Log
@@ -542,14 +542,20 @@ class StaffService {
   // ── DEPARTMENTS MANAGEMENT ──────────────────────────────────────────────────
 
   async getDepartments(orgId: string): Promise<Department[]> {
+    if (!isSupabaseConfigured) {
+      return MOCK_DEPARTMENTS[orgId] || [];
+    }
+
     try {
       const { data, error } = await supabase.from('departments').select('*').eq('organization_id', orgId);
-      if (error || !data || data.length === 0) {
-        return MOCK_DEPARTMENTS[orgId] || [];
+      if (error) {
+        console.error('Unable to load departments.', error);
+        return [];
       }
-      return data;
-    } catch {
-      return MOCK_DEPARTMENTS[orgId] || [];
+      return data ?? [];
+    } catch (error) {
+      console.error('Unable to load departments.', error);
+      return [];
     }
   }
 
@@ -589,6 +595,22 @@ class StaffService {
   // ── TEAMS MANAGEMENT ────────────────────────────────────────────────────────
 
   async getTeams(orgId: string, departmentId?: string): Promise<Team[]> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('teams')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('name');
+      if (error) {
+        console.error('Unable to load teams.', error);
+        return [];
+      }
+      const teams = (data ?? []) as Team[];
+      return departmentId && departmentId !== 'all'
+        ? teams.filter((team) => team.department_id === departmentId)
+        : teams;
+    }
+
     const teams: Team[] = [
       {
         id: 'team-a1',

@@ -17,6 +17,11 @@ export const PERMISSION_MODULES: Record<string, { key: string; label: string }[]
     { key: 'staff.create',  label: 'Add Staff'            },
     { key: 'staff.update',  label: 'Edit Staff'           },
     { key: 'staff.archive', label: 'Archive Staff'        },
+    { key: 'staff.manage_access', label: 'Manage Portal Access' },
+    { key: 'staff.view_sensitive', label: 'View Sensitive Staff Data' },
+    { key: 'staff.view_documents', label: 'View Staff Documents' },
+    { key: 'staff.view_directory', label: 'View Staff Directory' },
+    { key: 'staff.update_self', label: 'Update Own Profile' },
   ],
   Attendance: [
     { key: 'attendance.view',   label: 'View Attendance'   },
@@ -100,7 +105,7 @@ export const SYSTEM_ROLES = [
     description: 'HR operations across the entire organization.',
     isSystem: true,
     permissionKeys: [
-      'staff.view', 'staff.create', 'staff.update', 'staff.archive',
+      'staff.view', 'staff.create', 'staff.update', 'staff.archive', 'staff.manage_access', 'staff.view_sensitive', 'staff.view_documents', 'staff.view_directory', 'staff.update_self',
       'attendance.view', 'attendance.manage', 'attendance.import',
       'leave.view', 'leave.request', 'leave.approve',
       'documents.view', 'documents.upload', 'documents.delete',
@@ -115,7 +120,7 @@ export const SYSTEM_ROLES = [
     description: 'Team/department oversight. Scope: assigned direct reports.',
     isSystem: true,
     permissionKeys: [
-      'staff.view',
+      'staff.view', 'staff.view_directory', 'staff.update_self',
       'attendance.view', 'attendance.manage',
       'leave.view', 'leave.request', 'leave.approve',
       'documents.view',

@@ -33,7 +33,7 @@ class AuditService {
     }
 
     if (!resolvedUserId) {
-      this.logToMock(params);
+      console.error('Unable to write audit event: no authenticated user session.');
       return;
     }
 
@@ -52,11 +52,10 @@ class AuditService {
     try {
       const { error } = await supabase.from('audit_logs').insert([auditRecord]);
       if (error) {
-        // RLS blocked or other DB error — fall back to in-memory mock
-        this.logToMock(params);
+        console.error('Unable to write audit event.', error);
       }
-    } catch {
-      this.logToMock(params);
+    } catch (error) {
+      console.error('Unable to write audit event.', error);
     }
   }
 

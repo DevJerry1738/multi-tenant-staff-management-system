@@ -20,17 +20,6 @@ const getBearerToken = (request: Request): string | null => {
   return null;
 };
 
-/** Decode JWT payload (base64url) without signature verification. */
-const jwtPayload = (jwt: string): Record<string, unknown> | null => {
-  try {
-    const parts = jwt.split('.');
-    if (parts.length !== 3) return null;
-    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
-    return JSON.parse(atob(padded));
-  } catch { return null; }
-};
-
 Deno.serve(async (request) => {
   // ── CORS pre-flight ────────────────────────────────────────────────────────
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -70,20 +59,10 @@ Deno.serve(async (request) => {
   // ── Authenticate caller ────────────────────────────────────────────────────
   let callerId: string | null = null;
 
-  // 1. Direct JWT payload decode (works for ES256, HS256, all tokens)
-  const payload = jwtPayload(token);
-  if (payload?.sub && typeof payload.sub === 'string' &&
-      (payload.role === 'authenticated' || payload.role === 'service_role')) {
-    callerId = payload.sub;
-  }
-
-  // 2. Fallback to admin.auth.getUser(token) if not already extracted
-  if (!callerId) {
-    try {
-      const { data } = await admin.auth.getUser(token);
-      callerId = data?.user?.id ?? null;
-    } catch { /* ignore */ }
-  }
+  try {
+    const { data, error } = await admin.auth.getUser(token);
+    if (!error) callerId = data?.user?.id ?? null;
+  } catch { /* ignore */ }
 
   if (!callerId) {
     console.error('[invite-staff] All auth strategies exhausted — no callerId');
@@ -119,7 +98,7 @@ Deno.serve(async (request) => {
     }
     callerMemberId = member.id;
 
-    // Permission check: check member roles
+    // Permission check: require the explicit staff.manage_access capability.
     const { data: mrRows } = await admin
       .from('member_roles')
       .select('role_id')
@@ -131,18 +110,16 @@ Deno.serve(async (request) => {
     if (roleIds.length > 0) {
       const { data: roles } = await admin
         .from('roles')
-        .select('name, is_system_role')
+        .select('id, name')
         .in('id', roleIds);
 
-      for (const r of roles || []) {
-        if (r.is_system_role || ['admin', 'organization admin', 'hr manager', 'manager'].includes(r.name.toLowerCase())) {
-          hasPermission = true;
-          break;
-        }
-      }
-    } else {
-      // If member has no assigned role row yet, allow if they are the primary org member
-      hasPermission = true;
+      const { data: permissionRows } = await admin
+        .from('role_permissions')
+        .select('role_id, permissions!inner(key)')
+        .in('role_id', roleIds);
+      hasPermission = (permissionRows || []).some((row) =>
+        (row.permissions as { key?: string } | null)?.key === 'staff.manage_access'
+      );
     }
 
     if (!hasPermission) {
@@ -165,6 +142,9 @@ Deno.serve(async (request) => {
 
   // ── Resolve or create role ─────────────────────────────────────────────────
   const targetRoleName = typeof role_name === 'string' && role_name.trim() ? role_name.trim() : 'Staff';
+  if (!['Staff', 'Manager'].includes(targetRoleName) && !platformAdmin) {
+    return json({ error: 'Only Staff or Manager roles may be assigned by organization users.' }, 403);
+  }
   let roleId: string | null = null;
 
   const { data: existingRole } = await admin
@@ -282,23 +262,27 @@ Deno.serve(async (request) => {
 
       // Assign role
       if (membershipId && roleId) {
-        await admin
+        const { error: roleAssignmentError } = await admin
           .from('member_roles')
           .insert({ organization_member_id: membershipId, role_id: roleId })
-          .catch(() => undefined);
+        if (roleAssignmentError) throw new Error(roleAssignmentError.message);
       }
     }
 
     // Always create / update organization_invitations record for token resolution
-    await admin.from('organization_invitations').insert({
+    const { error: invitationError } = await admin.from('organization_invitations').insert({
       organization_id,
       staff_profile_id: staff.id,
       email: cleanEmail,
       role_id: roleId,
       invited_by: callerId,
-      token_hash: invitationToken,
+      token_hash: await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(invitationToken),
+      ).then((digest) => Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('')),
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     });
+    if (invitationError) throw new Error(invitationError.message);
 
     // Update staff profile
     await admin
@@ -311,7 +295,7 @@ Deno.serve(async (request) => {
       .eq('id', staff.id);
 
     console.log('[invite-staff] Successfully invited staff:', cleanEmail);
-    return json({ success: true, membership_id: membershipId, token: invitationToken });
+    return json({ success: true, membership_id: membershipId });
 
   } catch (err) {
     console.error('[invite-staff] Transaction exception:', err);

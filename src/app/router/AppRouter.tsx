@@ -110,16 +110,24 @@ export const AppRouter: React.FC = () => {
 
       {/* ── Sprint 2: Staff Management ──────────────────────────────────────── */}
       <Route path="/staff" element={
-        <ProtectedRoute><StaffDirectoryPage /></ProtectedRoute>
+        <ProtectedRoute>
+          <RequirePermission permission="staff.view"><StaffDirectoryPage /></RequirePermission>
+        </ProtectedRoute>
       } />
       <Route path="/staff/:staffId" element={
-        <ProtectedRoute><StaffDetailPage /></ProtectedRoute>
+        <ProtectedRoute>
+          <RequirePermission permission="staff.view"><StaffDetailPage /></RequirePermission>
+        </ProtectedRoute>
       } />
       <Route path="/staff/departments" element={
-        <ProtectedRoute><DepartmentsPage /></ProtectedRoute>
+        <ProtectedRoute>
+          <RequirePermission permission="departments.view"><DepartmentsPage /></RequirePermission>
+        </ProtectedRoute>
       } />
       <Route path="/staff/teams" element={
-        <ProtectedRoute><TeamsPage /></ProtectedRoute>
+        <ProtectedRoute>
+          <RequirePermission permission="teams.view"><TeamsPage /></RequirePermission>
+        </ProtectedRoute>
       } />
 
       {/* ── Sprint 3: Attendance Management ────────────────────────────────── */}
