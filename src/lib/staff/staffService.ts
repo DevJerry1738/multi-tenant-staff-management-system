@@ -566,8 +566,35 @@ class StaffService {
     orgId: string,
     actorMemberId?: string
   ): Promise<Department> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('departments')
+        .insert({
+          organization_id: orgId,
+          name,
+          description,
+          manager_id: managerId,
+          is_active: true,
+        })
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new Error(error?.message || 'Unable to create department.');
+      }
+
+      await auditService.logEvent({
+        organizationId: orgId,
+        actorMemberId,
+        action: 'department.created',
+        resourceType: 'departments',
+        resourceId: data.id,
+        newValues: { name, description, manager_id: managerId },
+      });
+      return data as Department;
+    }
+
     const newDept: Department = {
-      id: `dept-${Date.now()}`,
+      id: crypto.randomUUID(),
       organization_id: orgId,
       name,
       description,
@@ -651,8 +678,36 @@ class StaffService {
     orgId: string,
     actorMemberId?: string
   ): Promise<Team> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('teams')
+        .insert({
+          organization_id: orgId,
+          department_id: departmentId,
+          name,
+          description,
+          manager_id: managerId,
+          is_active: true,
+        })
+        .select('*')
+        .single();
+      if (error || !data) {
+        throw new Error(error?.message || 'Unable to create team.');
+      }
+
+      await auditService.logEvent({
+        organizationId: orgId,
+        actorMemberId,
+        action: 'team.created',
+        resourceType: 'teams',
+        resourceId: data.id,
+        newValues: { name, department_id: departmentId, manager_id: managerId },
+      });
+      return data as Team;
+    }
+
     const newTeam: Team = {
-      id: `team-${Date.now()}`,
+      id: crypto.randomUUID(),
       organization_id: orgId,
       department_id: departmentId,
       name,
