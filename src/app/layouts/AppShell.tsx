@@ -51,7 +51,7 @@ interface NavItem {
  */
 const SIDEBAR_NAV: NavItem[] = [
   { label: 'Dashboard',     path: '/dashboard',     icon: LayoutDashboard },
-  { label: 'Staff',         path: '/staff',         icon: Users            },
+  { label: 'Staff',         path: '/staff',         icon: Users, permission: 'staff.view_directory' },
   { label: 'Attendance',    path: '/attendance',    icon: Clock            },
   { label: 'Leave',         path: '/leave',         icon: CalendarDays     },
   { label: 'Announcements', path: '/announcements', icon: Megaphone        },

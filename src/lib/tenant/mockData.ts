@@ -67,6 +67,7 @@ export const MOCK_PERMISSIONS: Record<string, string[]> = {
   '11111111-1111-1111-1111-111111111111': [
     // Staff
     'staff.view', 'staff.create', 'staff.update', 'staff.archive',
+    'staff.manage_access', 'staff.view_sensitive', 'staff.view_documents', 'staff.view_directory', 'staff.update_self',
     // Attendance
     'attendance.view', 'attendance.manage', 'attendance.import',
     // Leave

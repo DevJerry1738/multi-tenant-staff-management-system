@@ -111,6 +111,8 @@ export const SYSTEM_ROLES = [
       'documents.view', 'documents.upload', 'documents.delete',
       'announcements.view', 'announcements.create',
       'reports.view', 'reports.export',
+      'departments.view', 'departments.create', 'departments.update', 'departments.archive',
+      'teams.view', 'teams.create', 'teams.update', 'teams.archive',
     ],
   },
   {
@@ -120,7 +122,7 @@ export const SYSTEM_ROLES = [
     description: 'Team/department oversight. Scope: assigned direct reports.',
     isSystem: true,
     permissionKeys: [
-      'staff.view', 'staff.view_directory', 'staff.update_self',
+      'staff.view', 'staff.update_self',
       'attendance.view', 'attendance.manage',
       'leave.view', 'leave.request', 'leave.approve',
       'documents.view',
@@ -147,7 +149,7 @@ export const SYSTEM_ROLES = [
 // ── Navigation access matrix (informational) ────────────────────────────────
 const NAV_MATRIX = [
   { nav: 'Dashboard',     admin: true,  hr: true,  manager: true,  staff: true  },
-  { nav: 'Staff',         admin: true,  hr: true,  manager: true,  staff: true  },
+  { nav: 'Staff',         admin: true,  hr: true,  manager: false, staff: false },
   { nav: 'Attendance',    admin: true,  hr: true,  manager: true,  staff: true  },
   { nav: 'Leave',         admin: true,  hr: true,  manager: true,  staff: true  },
   { nav: 'Announcements', admin: true,  hr: true,  manager: true,  staff: true  },

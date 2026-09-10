@@ -19,10 +19,13 @@ JOIN public.permissions p ON p.key = ANY (
     ]
     WHEN 'HR Manager' THEN ARRAY[
       'staff.view', 'staff.create', 'staff.update', 'staff.archive',
+      'staff.view_directory', 'staff.manage_access', 'staff.view_sensitive', 'staff.view_documents', 'staff.update_self',
       'attendance.view', 'attendance.manage', 'attendance.import',
       'leave.view', 'leave.request', 'leave.approve',
       'documents.view', 'documents.upload', 'documents.delete',
-      'announcements.view', 'announcements.create', 'reports.view', 'reports.export'
+      'announcements.view', 'announcements.create', 'reports.view', 'reports.export',
+      'departments.view', 'departments.create', 'departments.update', 'departments.archive',
+      'teams.view', 'teams.create', 'teams.update', 'teams.archive'
     ]
     WHEN 'Manager' THEN ARRAY[
       'staff.view', 'attendance.view', 'attendance.manage',
