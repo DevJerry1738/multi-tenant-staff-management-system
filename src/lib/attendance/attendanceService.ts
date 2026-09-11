@@ -50,6 +50,7 @@ export interface GetAttendanceParams {
   currentStaffId?: string;
   currentDepartmentId?: string;
   currentTeamId?: string;
+  allowMockFallback?: boolean;
 }
 
 export interface GetAttendanceResult {
@@ -88,7 +89,7 @@ class AttendanceService {
   /**
    * Retrieves organization attendance settings.
    */
-  async getAttendanceSettings(orgId: string): Promise<Partial<OrganizationSettings>> {
+  async getAttendanceSettings(orgId: string, allowMockFallback = true): Promise<Partial<OrganizationSettings>> {
     try {
       const { data, error } = await supabase
         .from('organization_settings')
@@ -97,6 +98,8 @@ class AttendanceService {
         .single();
 
       if (error || !data) {
+        if (!allowMockFallback && error) throw new Error(error.message);
+        if (!allowMockFallback) return {};
         return MOCK_ATTENDANCE_SETTINGS[orgId] || {
           attendance_enabled: true,
           attendance_method: 'platform_clocking',
@@ -106,7 +109,8 @@ class AttendanceService {
         };
       }
       return data;
-    } catch {
+    } catch (error) {
+      if (!allowMockFallback) throw error;
       return MOCK_ATTENDANCE_SETTINGS[orgId] || {
         attendance_enabled: true,
         attendance_method: 'platform_clocking',
@@ -377,9 +381,10 @@ class AttendanceService {
       limit = 10,
       userScope = 'organization',
       currentStaffId,
+      allowMockFallback = true,
     } = params;
 
-    let list = await this.getAllRecords(orgId);
+    let list = await this.getAllRecords(orgId, allowMockFallback);
 
     // Scope rules
     if (userScope === 'self' && currentStaffId) {
@@ -430,7 +435,7 @@ class AttendanceService {
 
   // ── PRIVATE STORAGE HELPERS ──────────────────────────────────────────────────
 
-  private async getAllRecords(orgId: string): Promise<AttendanceRecord[]> {
+  private async getAllRecords(orgId: string, allowMockFallback = true): Promise<AttendanceRecord[]> {
     try {
       const { data, error } = await supabase
         .from('attendance_records')
@@ -438,10 +443,13 @@ class AttendanceService {
         .eq('organization_id', orgId);
 
       if (error || !data || data.length === 0) {
+        if (!allowMockFallback && error) throw new Error(error.message);
+        if (!allowMockFallback) return [];
         return MOCK_ATTENDANCE[orgId] || [];
       }
       return data;
-    } catch {
+    } catch (error) {
+      if (!allowMockFallback) throw error;
       return MOCK_ATTENDANCE[orgId] || [];
     }
   }

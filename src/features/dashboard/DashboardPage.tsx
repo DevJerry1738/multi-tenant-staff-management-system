@@ -1,15 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useTenant } from '@/lib/tenant/TenantContext';
-import {
-  MOCK_STAFF,
-  MOCK_DEPARTMENTS,
-  MOCK_ATTENDANCE,
-  MOCK_LEAVE,
-  MOCK_ANNOUNCEMENTS,
-  MOCK_NOTIFICATIONS,
-} from '@/lib/tenant/mockData';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Badge } from '@/components/ui';
-import { Users, Clock, FileText, Bell, CalendarDays, Sparkles, ArrowRight, CheckCircle2, AlertTriangle, Building2 } from 'lucide-react';
+import { useAuth } from '@/lib/auth/AuthContext';
+import { dashboardService, type DashboardData } from '@/lib/dashboard/dashboardService';
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Badge } from '@/components/ui';
+import { Users, Clock, FileText, Bell, CalendarDays, Sparkles, ArrowRight, CheckCircle2, AlertTriangle, Building2, Plus, UserCheck, ClipboardList } from 'lucide-react';
 
 const getRolePriority = (roleName?: string) => {
   if (!roleName) return 0;
@@ -30,18 +25,58 @@ const getGreeting = () => {
 };
 
 export const DashboardPage: React.FC = () => {
-  const { activeOrganization, activeRoles } = useTenant();
+  const { activeOrganization, activeRoles, activePermissions, currentStaffProfile } = useTenant();
+  const { user } = useAuth();
+  const navigate = useNavigate();
 
   const orgId = activeOrganization?.id || '';
-  const currentStaff = MOCK_STAFF[orgId] || [];
-  const currentDepts = MOCK_DEPARTMENTS[orgId] || [];
-  const currentAttendance = MOCK_ATTENDANCE[orgId] || [];
-  const currentLeave = MOCK_LEAVE[orgId] || [];
-  const currentAnnouncements = MOCK_ANNOUNCEMENTS[orgId] || [];
-  const unreadNotifications = (MOCK_NOTIFICATIONS[orgId] || []).filter((n) => !n.read_at).length;
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const roleName = [...activeRoles].sort((a, b) => getRolePriority(b.name) - getRolePriority(a.name))[0]?.name ?? 'Staff';
   const greeting = getGreeting();
+  const isAdmin = roleName === 'Organization Admin';
+  const isHr = roleName === 'HR Manager';
+  const isManager = roleName === 'Manager';
+  const isStaffUser = roleName === 'Staff';
+  const userScope = isStaffUser ? 'self' : isManager ? 'team' : 'organization';
+  const currentDepts = dashboardData?.departments || [];
+  const currentStaff = dashboardData?.staff || [];
+  const currentAttendance = dashboardData?.attendance || [];
+  const currentLeave = dashboardData?.leave || [];
+  const currentAnnouncements = dashboardData?.announcements || [];
+  const unreadNotifications = dashboardData?.unreadNotifications || 0;
+  const attendanceMethod = dashboardData?.settings.attendance_method;
+  const currentUserName = user?.user_metadata?.full_name || currentStaffProfile?.first_name || user?.email?.split('@')[0] || 'there';
+
+  useEffect(() => {
+    if (!orgId) return;
+
+    let cancelled = false;
+    setIsLoading(true);
+    setLoadError(null);
+
+    dashboardService.getDashboardData({
+      orgId,
+      userScope,
+      currentStaffId: currentStaffProfile?.id,
+      currentMemberId: currentStaffProfile?.organization_member_id || undefined,
+      currentDepartmentId: currentStaffProfile?.department_id || undefined,
+      currentTeamId: currentStaffProfile?.team_id || undefined,
+    }).then((data) => {
+      if (!cancelled) setDashboardData(data);
+    }).catch((error: unknown) => {
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : 'Unable to load dashboard data.');
+    }).finally(() => {
+      if (!cancelled) setIsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStaffProfile?.department_id, currentStaffProfile?.id, currentStaffProfile?.organization_member_id, currentStaffProfile?.team_id, orgId, refreshKey, userScope]);
 
   const attendanceSummary = {
     present: currentAttendance.filter((record) => record.status === 'present').length,
@@ -67,10 +102,20 @@ export const DashboardPage: React.FC = () => {
           ? 'Team overview'
           : 'My workday';
 
-  const isAdmin = roleName === 'Organization Admin';
-  const isHr = roleName === 'HR Manager';
-  const isManager = roleName === 'Manager';
-  const isStaffUser = roleName === 'Staff';
+  const canCreateStaff = activePermissions.includes('staff.create');
+  const canReviewLeave = activePermissions.includes('leave.approve');
+  const canViewAttendance = activePermissions.includes('attendance.view');
+  const quickActions = isStaffUser
+    ? [
+        canViewAttendance ? { label: 'View attendance', path: '/attendance', icon: Clock } : null,
+        activePermissions.includes('leave.request') ? { label: 'Request leave', path: '/leave', icon: CalendarDays } : null,
+        { label: 'View profile', path: '/profile', icon: UserCheck },
+      ]
+    : [
+        canCreateStaff ? { label: 'Add staff', path: '/staff', icon: Plus } : null,
+        canReviewLeave ? { label: 'Review leave', path: '/leave', icon: ClipboardList } : null,
+        canViewAttendance ? { label: 'View attendance', path: '/attendance', icon: Clock } : null,
+      ];
 
   return (
     <div className="space-y-6">
@@ -79,10 +124,14 @@ export const DashboardPage: React.FC = () => {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{headerLabel}</p>
             <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
-              {greeting}, {activeOrganization?.name ? activeOrganization.name.split(' ')[0] : 'there'}
+              {greeting}, {currentUserName}
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Here&apos;s what&apos;s happening at {activeOrganization?.name || 'your organization'} today.
+              {isStaffUser
+                ? 'Here is your workday at a glance.'
+                : isManager
+                  ? 'Here is what is happening with your team today.'
+                  : `Here is what is happening at ${activeOrganization?.name || 'your organization'} today.`}
             </p>
           </div>
 
@@ -93,26 +142,59 @@ export const DashboardPage: React.FC = () => {
         </div>
       </header>
 
+      <section aria-labelledby="quick-actions-heading" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 id="quick-actions-heading" className="text-sm font-semibold text-slate-900">Quick actions</h2>
+          <p className="mt-1 text-xs text-slate-500">Shortcuts for the work you can do from here.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {quickActions.filter(Boolean).map((action) => {
+            const ActionIcon = action!.icon;
+            return (
+              <Button key={action!.path} variant="outline" size="sm" onClick={() => navigate(action!.path)}>
+                <ActionIcon className="mr-1.5 h-3.5 w-3.5" />
+                {action!.label}
+              </Button>
+            );
+          })}
+        </div>
+      </section>
+
+      {isLoading && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading dashboard" aria-live="polite">
+          {[1, 2, 3, 4].map((item) => (
+            <div key={item} className="h-28 animate-pulse rounded-lg border border-slate-200 bg-slate-100" />
+          ))}
+        </div>
+      )}
+
+      {loadError && (
+        <div role="alert" className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 sm:flex-row sm:items-center sm:justify-between">
+          <span>Unable to load dashboard data. {loadError}</span>
+          <Button variant="outline" size="sm" onClick={() => setRefreshKey((key) => key + 1)}>Retry</Button>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-medium text-slate-500">Total staff</CardTitle>
+            <CardTitle className="text-xs font-medium text-slate-500">{isStaffUser ? 'My attendance' : isManager ? 'My team' : 'Total staff'}</CardTitle>
             <Users className="h-4 w-4 text-indigo-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-slate-900">{currentStaff.length}</div>
-            <p className="mt-1 text-[11px] text-slate-500">{currentDepts.length} active department{currentDepts.length === 1 ? '' : 's'}</p>
+            <div className="text-3xl font-bold text-slate-900">{isStaffUser ? attendanceSummary.present : currentStaff.length}</div>
+            <p className="mt-1 text-[11px] text-slate-500">{isStaffUser ? 'Present records' : isManager ? 'Staff in your scope' : `${currentDepts.length} active department${currentDepts.length === 1 ? '' : 's'}`}</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-xs font-medium text-slate-500">Today&apos;s attendance</CardTitle>
+            <CardTitle className="text-xs font-medium text-slate-500">{isStaffUser ? "Today's status" : "Today's attendance"}</CardTitle>
             <Clock className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-slate-900">{attendanceSummary.present}</div>
-            <p className="mt-1 text-[11px] text-emerald-600">{Math.max(currentStaff.length ? Math.round((attendanceSummary.present / currentStaff.length) * 100) : 0, 0)}% present</p>
+            <p className="mt-1 text-[11px] text-emerald-600">{isStaffUser ? (attendanceSummary.present ? 'Attendance recorded' : attendanceMethod === 'biometric_import' ? 'Managed by biometric import' : 'Not recorded yet') : `${Math.max(currentStaff.length ? Math.round((attendanceSummary.present / currentStaff.length) * 100) : 0, 0)}% present`}</p>
           </CardContent>
         </Card>
 
@@ -146,7 +228,7 @@ export const DashboardPage: React.FC = () => {
               <CardTitle className="text-base text-slate-900">Attendance overview</CardTitle>
               <Badge variant="secondary" className="text-[10px]">Today</Badge>
             </div>
-            <CardDescription>Actual attendance activity for the current organization.</CardDescription>
+            <CardDescription>{isStaffUser ? attendanceMethod === 'biometric_import' ? 'Attendance is managed by your organization\'s biometric system.' : 'Your attendance activity.' : isManager ? 'Attendance for staff in your permitted scope.' : attendanceMethod === 'biometric_import' ? 'Latest attendance imported from the organization\'s biometric system.' : 'Actual attendance activity for the current organization.'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-4">
@@ -170,7 +252,7 @@ export const DashboardPage: React.FC = () => {
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
               {currentAttendance.length === 0 ? (
-                <>No attendance recorded yet for this organization.</>
+                <>{isStaffUser ? 'No attendance recorded yet today.' : 'No attendance recorded yet for this scope.'}</>
               ) : (
                 <>Attendance is being tracked for {currentAttendance.length} staff record{currentAttendance.length === 1 ? '' : 's'}.</>
               )}
@@ -208,7 +290,7 @@ export const DashboardPage: React.FC = () => {
               <CardTitle className="text-base text-slate-900">Leave overview</CardTitle>
               <FileText className="h-4 w-4 text-slate-400" />
             </div>
-            <CardDescription>Pending and upcoming leave activity.</CardDescription>
+            <CardDescription>{isStaffUser ? 'Your leave requests.' : isManager ? 'Leave activity for your team.' : 'Pending and upcoming leave activity.'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
@@ -281,8 +363,14 @@ export const DashboardPage: React.FC = () => {
       {(isAdmin || isHr || isManager || isStaffUser) && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base text-slate-900">Organization snapshot</CardTitle>
-            <CardDescription>Current staffing and activity summary for {activeOrganization?.name || 'your organization'}.</CardDescription>
+            <CardTitle className="text-base text-slate-900">{isStaffUser ? 'My workday' : isManager ? 'Team snapshot' : 'Organization snapshot'}</CardTitle>
+            <CardDescription>
+              {isStaffUser
+                ? 'Your personal attendance and notifications.'
+                : isManager
+                  ? 'Staffing and activity within your permitted scope.'
+                  : `Current staffing and activity summary for ${activeOrganization?.name || 'your organization'}.`}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 md:grid-cols-3">
