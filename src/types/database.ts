@@ -9,7 +9,7 @@ export type AccountAccessStatus = 'no_account' | 'invited' | 'active' | 'suspend
 
 // Attendance Enums
 export type AttendanceMethod = 'platform_clocking' | 'biometric_import';
-export type AttendanceStatus = 'present' | 'absent' | 'late' | 'half_day' | 'on_leave' | 'holiday' | 'weekend' | 'incomplete';
+export type AttendanceStatus = 'present' | 'absent' | 'late' | 'half_day' | 'early_departure' | 'incomplete' | 'on_leave' | 'holiday' | 'weekend' | 'not_recorded';
 export type WorkLocation = 'office' | 'remote' | 'field';
 export type AttendanceSource = 'platform' | 'biometric' | 'manual';
 export type EventType = 'clock_in' | 'clock_out' | 'manual_clock_in' | 'manual_clock_out' | 'biometric_clock_in' | 'biometric_clock_out';
@@ -228,6 +228,26 @@ export interface AttendanceImportError {
   error_message: string;
   raw_data: any | null;
   created_at: string;
+}
+
+export type AttendanceCorrectionStatus = 'pending' | 'approved' | 'rejected';
+
+export interface AttendanceCorrectionRequest {
+  id: string;
+  organization_id: string;
+  attendance_record_id: string;
+  requested_by_member_id: string;
+  reviewed_by_member_id: string | null;
+  original_clock_in: string | null;
+  original_clock_out: string | null;
+  requested_clock_in: string | null;
+  requested_clock_out: string | null;
+  requested_work_location: WorkLocation | null;
+  reason: string;
+  status: AttendanceCorrectionStatus;
+  review_reason: string | null;
+  created_at: string;
+  reviewed_at: string | null;
 }
 
 export interface LeaveRequest {

@@ -20,6 +20,7 @@ import { DepartmentsPage } from '@/features/staff/DepartmentsPage';
 import { TeamsPage } from '@/features/staff/TeamsPage';
 import { TodayAttendancePage } from '@/features/attendance/TodayAttendancePage';
 import { AttendanceHistoryPage } from '@/features/attendance/AttendanceHistoryPage';
+import { AttendanceCorrectionsPage } from '@/features/attendance/AttendanceCorrectionsPage';
 import { BiometricImportPage } from '@/features/attendance/BiometricImportPage';
 import { AttendanceReportsPage } from '@/features/attendance/AttendanceReportsPage';
 import { PlaceholderModule } from '@/components/common/PlaceholderModule';
@@ -147,9 +148,7 @@ export const AppRouter: React.FC = () => {
       } />
       <Route path="/attendance/corrections" element={
         <ProtectedRoute>
-          <RequirePermission permission="attendance.manage">
-            <AttendanceHistoryPage />
-          </RequirePermission>
+          <RequirePermission permission="attendance.manage"><AttendanceCorrectionsPage /></RequirePermission>
         </ProtectedRoute>
       } />
       <Route path="/attendance/import" element={

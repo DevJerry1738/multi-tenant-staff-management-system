@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase/client';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
 import { MOCK_ATTENDANCE } from '@/lib/tenant/mockData';
 import type {
   AttendanceRecord,
@@ -8,6 +8,7 @@ import type {
   WorkLocation,
   AttendanceStatus,
   AttendanceSource,
+  AttendanceCorrectionRequest,
 } from '@/types/database';
 import { auditService } from '@/lib/audit/auditService';
 
@@ -32,6 +33,18 @@ export interface CorrectAttendanceInput {
   reason: string;
   orgId: string;
   actorMemberId?: string;
+}
+
+export interface RequestAttendanceCorrectionInput extends CorrectAttendanceInput {
+  requestedByMemberId: string;
+}
+
+export interface ReviewAttendanceCorrectionInput {
+  requestId: string;
+  orgId: string;
+  reviewerMemberId: string;
+  decision: 'approved' | 'rejected';
+  reviewReason?: string;
 }
 
 export interface GetAttendanceParams {
@@ -84,6 +97,7 @@ const MOCK_ATTENDANCE_SETTINGS: Record<string, Partial<OrganizationSettings>> = 
 };
 
 const MOCK_ATTENDANCE_EVENTS: Record<string, AttendanceEvent[]> = {};
+const MOCK_CORRECTION_REQUESTS: Record<string, AttendanceCorrectionRequest[]> = {};
 
 class AttendanceService {
   /**
@@ -299,8 +313,141 @@ class AttendanceService {
     return { data: updatedRecord };
   }
 
+  async requestAttendanceCorrection(
+    input: RequestAttendanceCorrectionInput
+  ): Promise<{ data: AttendanceCorrectionRequest | null; error?: string }> {
+    if (!input.reason.trim()) return { data: null, error: 'A mandatory correction reason must be provided.' };
+
+    const records = await this.getAllRecords(input.orgId);
+    const existing = records.find((record) => record.id === input.recordId);
+    if (!existing) return { data: null, error: 'Attendance record not found.' };
+
+    const request: AttendanceCorrectionRequest = {
+      id: crypto.randomUUID(),
+      organization_id: input.orgId,
+      attendance_record_id: existing.id,
+      requested_by_member_id: input.requestedByMemberId,
+      reviewed_by_member_id: null,
+      original_clock_in: existing.clock_in,
+      original_clock_out: existing.clock_out,
+      requested_clock_in: input.newClockIn ?? existing.clock_in,
+      requested_clock_out: input.newClockOut ?? existing.clock_out,
+      requested_work_location: input.workLocation ?? existing.work_location,
+      reason: input.reason.trim(),
+      status: 'pending',
+      review_reason: null,
+      created_at: new Date().toISOString(),
+      reviewed_at: null,
+    };
+
+    if (!MOCK_CORRECTION_REQUESTS[input.orgId]) MOCK_CORRECTION_REQUESTS[input.orgId] = [];
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('attendance_correction_requests')
+        .insert(request)
+        .select('*')
+        .single();
+      if (error) return { data: null, error: 'Correction request could not be submitted.' };
+      await auditService.logEvent({
+        organizationId: input.orgId,
+        actorMemberId: input.requestedByMemberId,
+        action: 'attendance.correction_requested',
+        resourceType: 'attendance_correction_requests',
+        resourceId: data.id,
+        newValues: { attendance_record_id: existing.id, reason: request.reason },
+      });
+      return { data: data as AttendanceCorrectionRequest };
+    }
+
+    MOCK_CORRECTION_REQUESTS[input.orgId].unshift(request);
+    await auditService.logEvent({
+      organizationId: input.orgId,
+      actorMemberId: input.requestedByMemberId,
+      action: 'attendance.correction_requested',
+      resourceType: 'attendance_correction_requests',
+      resourceId: request.id,
+      newValues: { attendance_record_id: existing.id, reason: request.reason },
+    });
+    return { data: request };
+  }
+
+  async reviewAttendanceCorrection(
+    input: ReviewAttendanceCorrectionInput
+  ): Promise<{ data: AttendanceCorrectionRequest | null; error?: string }> {
+    const requests = await this.getCorrectionRequests(input.orgId);
+    const request = requests.find((item) => item.id === input.requestId);
+    if (!request) return { data: null, error: 'Correction request not found.' };
+    if (request.status !== 'pending') return { data: null, error: 'This correction request has already been reviewed.' };
+
+    const reviewedAt = new Date().toISOString();
+    const reviewedRequest = {
+      ...request,
+      status: input.decision,
+      reviewed_by_member_id: input.reviewerMemberId,
+      review_reason: input.reviewReason?.trim() || null,
+      reviewed_at: reviewedAt,
+    } satisfies AttendanceCorrectionRequest;
+
+    if (isSupabaseConfigured) {
+      const { data: reviewedId, error } = await supabase.rpc('review_attendance_correction', {
+        p_request_id: request.id,
+        p_decision: input.decision,
+        p_review_reason: input.reviewReason || null,
+      });
+      if (error || !reviewedId) return { data: null, error: 'Correction request could not be reviewed.' };
+
+      const { data, error: loadError } = await supabase
+        .from('attendance_correction_requests')
+        .select('*')
+        .eq('id', reviewedId)
+        .eq('organization_id', input.orgId)
+        .single();
+      if (loadError || !data) return { data: null, error: 'Correction review completed but the result could not be loaded.' };
+      return { data: data as AttendanceCorrectionRequest };
+    }
+
+    const index = requests.findIndex((item) => item.id === request.id);
+    MOCK_CORRECTION_REQUESTS[input.orgId][index] = reviewedRequest;
+    if (input.decision === 'approved') {
+      const correction = await this.correctAttendance({
+        recordId: request.attendance_record_id,
+        newClockIn: request.requested_clock_in,
+        newClockOut: request.requested_clock_out,
+        workLocation: request.requested_work_location || undefined,
+        reason: request.reason,
+        orgId: input.orgId,
+        actorMemberId: input.reviewerMemberId,
+      });
+      if (correction.error) return { data: null, error: correction.error };
+    }
+    await auditService.logEvent({
+      organizationId: input.orgId,
+      actorMemberId: input.reviewerMemberId,
+      action: input.decision === 'approved' ? 'attendance.correction_approved' : 'attendance.correction_rejected',
+      resourceType: 'attendance_correction_requests',
+      resourceId: request.id,
+      oldValues: { status: 'pending' },
+      newValues: { status: input.decision, review_reason: reviewedRequest.review_reason },
+    });
+    return { data: reviewedRequest };
+  }
+
+  async getCorrectionRequests(orgId: string): Promise<AttendanceCorrectionRequest[]> {
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('attendance_correction_requests')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false });
+      if (error) throw new Error('Unable to load attendance correction requests.');
+      return (data || []) as AttendanceCorrectionRequest[];
+    }
+    return MOCK_CORRECTION_REQUESTS[orgId] || [];
+  }
+
   /**
-   * Manual Attendance Correction (Admin, HR, Manager). Mandatory reason required.
+   * Direct correction used by an authorized reviewer after approval.
    */
   async correctAttendance(
     input: CorrectAttendanceInput

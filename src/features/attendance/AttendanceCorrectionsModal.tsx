@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTenant } from '@/lib/tenant/TenantContext';
 import type { AttendanceRecord, WorkLocation } from '@/types/database';
 import { attendanceService } from '@/lib/attendance/attendanceService';
 import { Button } from '@/components/ui';
@@ -25,6 +26,8 @@ export const AttendanceCorrectionsModal: React.FC<AttendanceCorrectionsModalProp
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+    const { activeRoles, currentStaffProfile } = useTenant();
+    const isManager = activeRoles.some((role) => role.name === 'Manager');
 
   useEffect(() => {
     if (isOpen && record) {
@@ -50,14 +53,21 @@ export const AttendanceCorrectionsModal: React.FC<AttendanceCorrectionsModalProp
 
     setLoading(true);
 
-    const res = await attendanceService.correctAttendance({
+    const correctionInput = {
       recordId: record.id,
       newClockIn: clockIn ? new Date(clockIn).toISOString() : null,
       newClockOut: clockOut ? new Date(clockOut).toISOString() : null,
       workLocation,
       reason: reason.trim(),
       orgId,
-    });
+      actorMemberId: currentStaffProfile?.organization_member_id || undefined,
+    };
+    const res = isManager
+      ? await attendanceService.requestAttendanceCorrection({
+          ...correctionInput,
+          requestedByMemberId: currentStaffProfile?.organization_member_id || '',
+        })
+      : await attendanceService.correctAttendance(correctionInput);
 
     setLoading(false);
 
@@ -77,7 +87,7 @@ export const AttendanceCorrectionsModal: React.FC<AttendanceCorrectionsModalProp
           <div className="flex items-center gap-2">
             <Clock className="w-5 h-5 text-indigo-600" />
             <div>
-              <h2 className="text-base font-bold text-slate-900">Correct Attendance Record</h2>
+              <h2 className="text-base font-bold text-slate-900">{isManager ? 'Request Attendance Correction' : 'Correct Attendance Record'}</h2>
               <p className="text-xs text-slate-500">Date: {record.attendance_date}</p>
             </div>
           </div>
@@ -106,7 +116,7 @@ export const AttendanceCorrectionsModal: React.FC<AttendanceCorrectionsModalProp
           {/* New Timestamps */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">New Clock In</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">{isManager ? 'Requested Clock In' : 'New Clock In'}</label>
               <input
                 type="datetime-local"
                 value={clockIn}
@@ -115,7 +125,7 @@ export const AttendanceCorrectionsModal: React.FC<AttendanceCorrectionsModalProp
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">New Clock Out</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">{isManager ? 'Requested Clock Out' : 'New Clock Out'}</label>
               <input
                 type="datetime-local"
                 value={clockOut}
@@ -142,14 +152,14 @@ export const AttendanceCorrectionsModal: React.FC<AttendanceCorrectionsModalProp
           {/* Mandatory Reason */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Mandatory Correction Reason *
+              {isManager ? 'Correction Request Reason *' : 'Mandatory Correction Reason *'}
             </label>
             <textarea
               required
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              placeholder="e.g. System glitch during clock-out, HR manual correction approved by manager..."
+              placeholder={isManager ? 'Explain what needs to be corrected and why...' : 'e.g. System glitch during clock-out, approved HR correction...'}
               className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-900"
             />
           </div>
@@ -160,7 +170,7 @@ export const AttendanceCorrectionsModal: React.FC<AttendanceCorrectionsModalProp
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 text-white">
-              <Save size={14} className="mr-1.5" /> Save Correction
+              <Save size={14} className="mr-1.5" /> {isManager ? 'Submit Request' : 'Save Correction'}
             </Button>
           </div>
         </form>
