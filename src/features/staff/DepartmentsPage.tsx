@@ -5,7 +5,7 @@ import type { Department, StaffProfile } from '@/types/database';
 import { StaffLayout } from './StaffLayout';
 import { PermissionGuard } from '@/components/common/PermissionGuard';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Badge, Button } from '@/components/ui';
-import { Building2, Users, Plus, X, Save, AlertCircle } from 'lucide-react';
+import { Building2, Users, Plus, X, Save, Pencil, Archive } from 'lucide-react';
 
 export const DepartmentsPage: React.FC = () => {
   const { activeOrganization } = useTenant();
@@ -17,6 +17,7 @@ export const DepartmentsPage: React.FC = () => {
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState<Department | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [managerId, setManagerId] = useState('');
@@ -53,13 +54,35 @@ export const DepartmentsPage: React.FC = () => {
     if (!name.trim()) return;
     setSubmitting(true);
 
-    await staffService.createDepartment(name.trim(), description.trim() || null, managerId || null, orgId);
-    setSubmitting(false);
-    setModalOpen(false);
-    setName('');
-    setDescription('');
-    setManagerId('');
-    loadData();
+    try {
+      if (editingDepartment) {
+        await staffService.updateDepartment(editingDepartment.id, { name: name.trim(), description: description.trim() || null, managerId: managerId || null }, orgId);
+      } else {
+        await staffService.createDepartment(name.trim(), description.trim() || null, managerId || null, orgId);
+      }
+      setModalOpen(false);
+      setEditingDepartment(null);
+      setName('');
+      setDescription('');
+      setManagerId('');
+      await loadData();
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openEdit = (department: Department) => {
+    setEditingDepartment(department);
+    setName(department.name);
+    setDescription(department.description || '');
+    setManagerId(department.manager_id || '');
+    setModalOpen(true);
+  };
+
+  const archiveDepartment = async (department: Department) => {
+    if (!window.confirm(`Archive ${department.name}? Assigned staff and historical records will be preserved.`)) return;
+    await staffService.archiveDepartment(department.id, orgId);
+    await loadData();
   };
 
   return (
@@ -98,6 +121,14 @@ export const DepartmentsPage: React.FC = () => {
                       <Badge variant="secondary" className="text-[9px]">Inactive</Badge>
                     )}
                   </div>
+                  <div className="flex justify-end gap-1 mt-2">
+                    <PermissionGuard permission="departments.update">
+                      <button type="button" title="Edit department" onClick={() => openEdit(dept)} className="p-1.5 rounded text-slate-400 hover:bg-slate-100 hover:text-indigo-600"><Pencil size={14} /></button>
+                    </PermissionGuard>
+                    <PermissionGuard permission="departments.archive">
+                      <button type="button" title="Archive department" onClick={() => archiveDepartment(dept)} className="p-1.5 rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Archive size={14} /></button>
+                    </PermissionGuard>
+                  </div>
                 </CardHeader>
                 <CardContent className="pt-0 text-xs space-y-2 border-t border-slate-100 mt-2">
                   <div className="flex items-center justify-between pt-2">
@@ -121,7 +152,7 @@ export const DepartmentsPage: React.FC = () => {
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-md overflow-hidden">
               <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900">Add Department</h3>
+                <h3 className="text-sm font-bold text-slate-900">{editingDepartment ? 'Edit Department' : 'Add Department'}</h3>
                 <button onClick={() => setModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-700">
                   <X size={16} />
                 </button>
@@ -172,7 +203,7 @@ export const DepartmentsPage: React.FC = () => {
                     Cancel
                   </Button>
                   <Button type="submit" size="sm" disabled={submitting} className="bg-indigo-600 text-white">
-                    <Save size={14} className="mr-1.5" /> Save Department
+                    <Save size={14} className="mr-1.5" /> {editingDepartment ? 'Save Changes' : 'Save Department'}
                   </Button>
                 </div>
               </form>

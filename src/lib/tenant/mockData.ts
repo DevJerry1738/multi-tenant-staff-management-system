@@ -1,4 +1,4 @@
-import type { Organization, StaffProfile, Department, Role, AttendanceRecord, LeaveRequest, Announcement, AppNotification, StaffDocument, AuditLog } from '@/types/database';
+import type { Organization, StaffProfile, Department, Team, Role, AttendanceRecord, LeaveRequest, Announcement, AppNotification, StaffDocument, AuditLog } from '@/types/database';
 
 export const MOCK_ORGANIZATIONS: Organization[] = [
   {
@@ -197,6 +197,13 @@ export const MOCK_DEPARTMENTS: Record<string, Department[]> = {
   ],
   '22222222-2222-2222-2222-222222222222': [
     { id: 'dept-b1', organization_id: '22222222-2222-2222-2222-222222222222', name: 'Asset Development', description: 'Commercial Project Engineering', manager_id: 'staff-b1', is_active: true, created_at: '', updated_at: '' },
+  ],
+};
+
+export const MOCK_TEAMS: Record<string, Team[]> = {
+  '11111111-1111-1111-1111-111111111111': [
+    { id: 'team-a1', organization_id: '11111111-1111-1111-1111-111111111111', department_id: 'dept-a1', name: 'Luxury Residential', description: 'High value properties unit', manager_id: 'staff-a1', is_active: true, created_at: '', updated_at: '' },
+    { id: 'team-a2', organization_id: '11111111-1111-1111-1111-111111111111', department_id: 'dept-a1', name: 'Commercial Leasing', description: 'Office & retail spaces unit', manager_id: null, is_active: true, created_at: '', updated_at: '' },
   ],
 };
 

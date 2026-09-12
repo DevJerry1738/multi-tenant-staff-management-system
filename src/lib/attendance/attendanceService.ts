@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
+import { staffService } from '@/lib/staff/staffService';
 import { MOCK_ATTENDANCE } from '@/lib/tenant/mockData';
 import type {
   AttendanceRecord,
@@ -189,6 +190,9 @@ class AttendanceService {
     if (existingToday && existingToday.clock_in && !existingToday.clock_out) {
       return { data: null, error: 'You are already clocked in for today. Please clock out before clocking in again.' };
     }
+    if (existingToday?.clock_in && existingToday.clock_out) {
+      return { data: null, error: 'Today\'s attendance is already complete and cannot be restarted.' };
+    }
 
     const nowIso = new Date().toISOString();
 
@@ -213,7 +217,7 @@ class AttendanceService {
       };
     } else {
       record = {
-        id: `att-${Date.now()}`,
+        id: crypto.randomUUID(),
         organization_id: input.orgId,
         staff_id: input.staffId,
         attendance_date: todayStr,
@@ -229,7 +233,39 @@ class AttendanceService {
       };
     }
 
-    this.saveRecord(input.orgId, record);
+    if (isSupabaseConfigured) {
+      const payload = {
+        organization_id: record.organization_id,
+        staff_id: record.staff_id,
+        attendance_date: record.attendance_date,
+        clock_in: record.clock_in,
+        clock_out: record.clock_out,
+        status: record.status,
+        work_mode: record.work_location,
+        work_location: record.work_location,
+        notes: record.notes,
+        source: record.source,
+        total_hours: record.total_hours,
+        updated_at: record.updated_at,
+      };
+      const { data, error } = existingToday
+        ? await supabase
+            .from('attendance_records')
+            .update(payload)
+            .eq('id', existingToday.id)
+            .eq('organization_id', input.orgId)
+            .select('*')
+            .single()
+        : await supabase
+            .from('attendance_records')
+            .insert(payload)
+            .select('*')
+            .single();
+      if (error || !data) return { data: null, error: 'Clock-in could not be saved. Please try again.' };
+      record = data as AttendanceRecord;
+    } else {
+      this.saveRecord(input.orgId, record);
+    }
 
     // Record Event
     this.logEvent(input.orgId, {
@@ -285,7 +321,24 @@ class AttendanceService {
       updated_at: nowIso,
     };
 
-    this.saveRecord(input.orgId, updatedRecord);
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('attendance_records')
+        .update({
+          clock_out: updatedRecord.clock_out,
+          total_hours: updatedRecord.total_hours,
+          notes: updatedRecord.notes,
+          updated_at: updatedRecord.updated_at,
+        })
+        .eq('id', existing.id)
+        .eq('organization_id', input.orgId)
+        .select('*')
+        .single();
+      if (error || !data) return { data: null, error: 'Clock-out could not be saved. Please try again.' };
+      Object.assign(updatedRecord, data as AttendanceRecord);
+    } else {
+      this.saveRecord(input.orgId, updatedRecord);
+    }
 
     this.logEvent(input.orgId, {
       id: `evt-${Date.now()}`,
@@ -528,8 +581,68 @@ class AttendanceService {
       limit = 10,
       userScope = 'organization',
       currentStaffId,
+      currentDepartmentId,
+      currentTeamId,
       allowMockFallback = true,
     } = params;
+
+    if (isSupabaseConfigured) {
+      const safePage = Math.max(page, 1);
+      const safeLimit = Math.min(Math.max(limit, 1), 100);
+      let scopedStaffIds: string[] | undefined;
+
+      if (userScope === 'self' && currentStaffId) {
+        scopedStaffIds = [currentStaffId];
+      } else if (userScope === 'team' || (departmentId && departmentId !== 'all') || (teamId && teamId !== 'all')) {
+        const staffResult = await staffService.getStaffProfiles({
+          orgId,
+          userScope: userScope === 'team' ? 'team' : 'organization',
+          currentStaffId,
+          currentDepartmentId,
+          currentTeamId,
+          departmentId,
+          teamId,
+          page: 1,
+          limit: 10000,
+        });
+        scopedStaffIds = staffResult.data.map((staff) => staff.id);
+      }
+
+      if (scopedStaffIds && scopedStaffIds.length === 0) {
+        return { data: [], total: 0, page: safePage, limit: safeLimit, totalPages: 1 };
+      }
+
+      let query = supabase
+        .from('attendance_records')
+        .select('*', { count: 'exact' })
+        .eq('organization_id', orgId)
+        .order('attendance_date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (scopedStaffIds) query = query.in('staff_id', scopedStaffIds);
+      if (staffId && staffId !== 'all') query = query.eq('staff_id', staffId);
+      if (startDate) query = query.gte('attendance_date', startDate);
+      if (endDate) query = query.lte('attendance_date', endDate);
+      if (status && status !== 'all') query = query.eq('status', status);
+      if (workLocation && workLocation !== 'all') query = query.eq('work_location', workLocation);
+      if (source && source !== 'all') query = query.eq('source', source);
+
+      const from = (safePage - 1) * safeLimit;
+      const { data, count, error } = await query.range(from, from + safeLimit - 1);
+      if (error) return { data: [], total: 0, page: safePage, limit: safeLimit, totalPages: 1 };
+
+      const total = count || 0;
+      return {
+        data: (data || []).map((record: any) => ({
+          ...record,
+          work_location: record.work_location || record.work_mode || 'office',
+        })) as AttendanceRecord[],
+        total,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit) || 1,
+      };
+    }
 
     let list = await this.getAllRecords(orgId, allowMockFallback);
 
@@ -589,14 +702,14 @@ class AttendanceService {
         .select('*')
         .eq('organization_id', orgId);
 
-      if (error || !data || data.length === 0) {
-        if (!allowMockFallback && error) throw new Error(error.message);
-        if (!allowMockFallback) return [];
+      if (error) {
+        if (!allowMockFallback || isSupabaseConfigured) throw new Error(error.message);
         return MOCK_ATTENDANCE[orgId] || [];
       }
+      if (!data || data.length === 0) return isSupabaseConfigured || !allowMockFallback ? [] : (MOCK_ATTENDANCE[orgId] || []);
       return data;
     } catch (error) {
-      if (!allowMockFallback) throw error;
+      if (!allowMockFallback || isSupabaseConfigured) throw error;
       return MOCK_ATTENDANCE[orgId] || [];
     }
   }

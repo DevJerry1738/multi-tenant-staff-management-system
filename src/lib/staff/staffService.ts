@@ -1,5 +1,5 @@
 import { isSupabaseConfigured, supabase } from '@/lib/supabase/client';
-import { MOCK_STAFF, MOCK_DEPARTMENTS, MOCK_ANNOUNCEMENTS } from '@/lib/tenant/mockData';
+import { MOCK_STAFF, MOCK_DEPARTMENTS, MOCK_TEAMS, MOCK_ANNOUNCEMENTS } from '@/lib/tenant/mockData';
 import { MOCK_INVITATIONS } from '@/lib/organizations/organizationService';
 import type { StaffProfile, Department, Team, EmploymentType, EmploymentStatus } from '@/types/database';
 import { auditService } from '@/lib/audit/auditService';
@@ -542,12 +542,12 @@ class StaffService {
   // ── DEPARTMENTS MANAGEMENT ──────────────────────────────────────────────────
 
   async getDepartments(orgId: string): Promise<Department[]> {
-    if (!isSupabaseConfigured) {
-      return MOCK_DEPARTMENTS[orgId] || [];
+      if (!isSupabaseConfigured) {
+        return (MOCK_DEPARTMENTS[orgId] || []).filter((department) => department.is_active);
     }
 
     try {
-      const { data, error } = await supabase.from('departments').select('*').eq('organization_id', orgId);
+        const { data, error } = await supabase.from('departments').select('*').eq('organization_id', orgId).eq('is_active', true).order('name');
       if (error) {
         console.error('Unable to load departments.', error);
         return [];
@@ -574,7 +574,7 @@ class StaffService {
           name,
           description,
           manager_id: managerId,
-          is_active: true,
+            is_active: true,
         })
         .select('*')
         .single();
@@ -619,6 +619,48 @@ class StaffService {
     return newDept;
   }
 
+  async updateDepartment(
+    id: string,
+    input: { name: string; description: string | null; managerId: string | null },
+    orgId: string,
+    actorMemberId?: string
+  ): Promise<Department> {
+    const name = input.name.trim();
+    if (!name) throw new Error('Department name is required.');
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('departments')
+        .update({ name, description: input.description, manager_id: input.managerId, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .select('*')
+        .single();
+      if (error || !data) throw new Error(error?.message || 'Unable to update department.');
+      await auditService.logEvent({ organizationId: orgId, actorMemberId, action: 'department.updated', resourceType: 'departments', resourceId: id, newValues: { name, description: input.description, manager_id: input.managerId } });
+      return data as Department;
+    }
+
+    const department = (MOCK_DEPARTMENTS[orgId] || []).find((item) => item.id === id);
+    if (!department) throw new Error('Department not found.');
+    Object.assign(department, { name, description: input.description, manager_id: input.managerId, updated_at: new Date().toISOString() });
+    await auditService.logEvent({ organizationId: orgId, actorMemberId, action: 'department.updated', resourceType: 'departments', resourceId: id, newValues: input });
+    return department;
+  }
+
+  async archiveDepartment(id: string, orgId: string, actorMemberId?: string): Promise<void> {
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('departments').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', id).eq('organization_id', orgId);
+      if (error) throw new Error(error.message);
+    } else {
+      const department = (MOCK_DEPARTMENTS[orgId] || []).find((item) => item.id === id);
+      if (!department) throw new Error('Department not found.');
+      department.is_active = false;
+      department.updated_at = new Date().toISOString();
+    }
+    await auditService.logEvent({ organizationId: orgId, actorMemberId, action: 'department.archived', resourceType: 'departments', resourceId: id, newValues: { is_active: false } });
+  }
+
   // ── TEAMS MANAGEMENT ────────────────────────────────────────────────────────
 
   async getTeams(orgId: string, departmentId?: string): Promise<Team[]> {
@@ -627,6 +669,7 @@ class StaffService {
         .from('teams')
         .select('*')
         .eq('organization_id', orgId)
+        .eq('is_active', true)
         .order('name');
       if (error) {
         console.error('Unable to load teams.', error);
@@ -638,32 +681,7 @@ class StaffService {
         : teams;
     }
 
-    const teams: Team[] = [
-      {
-        id: 'team-a1',
-        organization_id: '11111111-1111-1111-1111-111111111111',
-        department_id: 'dept-a1',
-        name: 'Luxury Residential',
-        description: 'High value properties unit',
-        manager_id: 'staff-a1',
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'team-a2',
-        organization_id: '11111111-1111-1111-1111-111111111111',
-        department_id: 'dept-a1',
-        name: 'Commercial Leasing',
-        description: 'Office & retail spaces unit',
-        manager_id: null,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
-
-    const filtered = teams.filter((t) => t.organization_id === orgId);
+    const filtered = (MOCK_TEAMS[orgId] || []).filter((t) => t.is_active);
     if (departmentId && departmentId !== 'all') {
       return filtered.filter((t) => t.department_id === departmentId);
     }
@@ -728,6 +746,48 @@ class StaffService {
     });
 
     return newTeam;
+  }
+
+  async updateTeam(
+    id: string,
+    input: { name: string; departmentId: string | null; description: string | null; managerId: string | null },
+    orgId: string,
+    actorMemberId?: string
+  ): Promise<Team> {
+    const name = input.name.trim();
+    if (!name) throw new Error('Team name is required.');
+
+    if (isSupabaseConfigured) {
+      const { data, error } = await supabase
+        .from('teams')
+        .update({ name, department_id: input.departmentId, description: input.description, manager_id: input.managerId, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('organization_id', orgId)
+        .select('*')
+        .single();
+      if (error || !data) throw new Error(error?.message || 'Unable to update team.');
+      await auditService.logEvent({ organizationId: orgId, actorMemberId, action: 'team.updated', resourceType: 'teams', resourceId: id, newValues: input });
+      return data as Team;
+    }
+
+    const team = (MOCK_TEAMS[orgId] || []).find((item) => item.id === id);
+    if (!team) throw new Error('Team not found.');
+    Object.assign(team, { name, department_id: input.departmentId, description: input.description, manager_id: input.managerId, updated_at: new Date().toISOString() });
+    await auditService.logEvent({ organizationId: orgId, actorMemberId, action: 'team.updated', resourceType: 'teams', resourceId: id, newValues: input });
+    return team;
+  }
+
+  async archiveTeam(id: string, orgId: string, actorMemberId?: string): Promise<void> {
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('teams').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', id).eq('organization_id', orgId);
+      if (error) throw new Error(error.message);
+    } else {
+      const team = (MOCK_TEAMS[orgId] || []).find((item) => item.id === id);
+      if (!team) throw new Error('Team not found.');
+      team.is_active = false;
+      team.updated_at = new Date().toISOString();
+    }
+    await auditService.logEvent({ organizationId: orgId, actorMemberId, action: 'team.archived', resourceType: 'teams', resourceId: id, newValues: { is_active: false } });
   }
 
   // ── PRIVATE HELPERS ─────────────────────────────────────────────────────────
