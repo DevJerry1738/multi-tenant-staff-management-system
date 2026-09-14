@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 export const AttendanceHistoryPage: React.FC = () => {
-  const { activeOrganization, activeRoles } = useTenant();
+  const { activeOrganization, activeRoles, currentStaffProfile } = useTenant();
   const orgId = activeOrganization?.id || '';
 
   const isAdminOrHR = activeRoles.some(
@@ -66,8 +66,16 @@ export const AttendanceHistoryPage: React.FC = () => {
     if (!orgId) return;
     staffService.getDepartments(orgId).then(setDepartments);
     staffService.getTeams(orgId).then(setTeams);
-    staffService.getStaffProfiles({ orgId, limit: 1000 }).then((r) => setStaffList(r.data));
-  }, [orgId]);
+    staffService.getStaffProfiles({
+      orgId,
+      userScope: userScope === 'team' ? 'organization' : userScope,
+      departmentId: userScope === 'team' ? currentStaffProfile?.department_id || undefined : undefined,
+      currentStaffId: currentStaffProfile?.id,
+      currentDepartmentId: currentStaffProfile?.department_id || undefined,
+      currentTeamId: currentStaffProfile?.team_id || undefined,
+      limit: 1000,
+    }).then((r) => setStaffList(r.data));
+  }, [currentStaffProfile?.department_id, currentStaffProfile?.id, currentStaffProfile?.team_id, orgId, userScope]);
 
   const fetchHistory = async () => {
     if (!orgId) return;
@@ -85,6 +93,9 @@ export const AttendanceHistoryPage: React.FC = () => {
       page,
       limit: 10,
       userScope,
+      currentStaffId: currentStaffProfile?.id,
+      currentDepartmentId: currentStaffProfile?.department_id || undefined,
+      currentTeamId: currentStaffProfile?.team_id || undefined,
     });
 
     setResult(res);

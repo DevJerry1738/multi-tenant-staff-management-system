@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 export const TodayAttendancePage: React.FC = () => {
-  const { activeOrganization, activeRoles } = useTenant();
+  const { activeOrganization, activeRoles, currentStaffProfile } = useTenant();
   const { user } = useAuth();
   const navigate = useNavigate();
   const orgId = activeOrganization?.id || '';
@@ -33,6 +33,11 @@ export const TodayAttendancePage: React.FC = () => {
     (r) => r.name === 'Organization Admin' || r.name === 'HR Manager'
   );
   const isManager = activeRoles.some((r) => r.name === 'Manager');
+  const userScope: 'organization' | 'team' | 'self' = isAdminOrHR
+    ? 'organization'
+    : isManager
+    ? 'team'
+    : 'self';
 
   // Staff State
   const [currentStaff, setCurrentStaff] = useState<StaffProfile | null>(null);
@@ -56,7 +61,15 @@ export const TodayAttendancePage: React.FC = () => {
     const settings = await attendanceService.getAttendanceSettings(orgId);
     setAttendanceSettings(settings);
 
-    const allStaff = await staffService.getStaffProfiles({ orgId, limit: 1000 });
+    const allStaff = await staffService.getStaffProfiles({
+      orgId,
+      userScope: userScope === 'team' ? 'organization' : userScope,
+      departmentId: userScope === 'team' ? currentStaffProfile?.department_id || undefined : undefined,
+      currentStaffId: currentStaffProfile?.id,
+      currentDepartmentId: currentStaffProfile?.department_id || undefined,
+      currentTeamId: currentStaffProfile?.team_id || undefined,
+      limit: 1000,
+    });
     setStaffList(allStaff.data);
 
     // Identify current user staff profile by email match
@@ -66,7 +79,14 @@ export const TodayAttendancePage: React.FC = () => {
 
     setCurrentStaff(myProfile);
 
-    const history = await attendanceService.getAttendanceHistory({ orgId, limit: 1000 });
+    const history = await attendanceService.getAttendanceHistory({
+      orgId,
+      userScope,
+      currentStaffId: currentStaffProfile?.id,
+      currentDepartmentId: currentStaffProfile?.department_id || undefined,
+      currentTeamId: currentStaffProfile?.team_id || undefined,
+      limit: 1000,
+    });
     const todayStr = new Date().toISOString().split('T')[0];
 
     const todayRecords = history.data.filter((r) => r.attendance_date === todayStr);
@@ -83,7 +103,7 @@ export const TodayAttendancePage: React.FC = () => {
 
   useEffect(() => {
     loadTodayData();
-  }, [orgId, user]);
+  }, [currentStaffProfile?.department_id, currentStaffProfile?.id, currentStaffProfile?.team_id, orgId, user, userScope]);
 
   // Handlers for Staff Clock In / Clock Out
   const handleClockIn = async () => {

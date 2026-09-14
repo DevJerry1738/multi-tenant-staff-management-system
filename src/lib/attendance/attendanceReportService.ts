@@ -34,7 +34,15 @@ class AttendanceReportService {
    */
   async getMonthlySummaryReport(params: GetAttendanceParams): Promise<MonthlyAttendanceSummary[]> {
     const orgId = params.orgId;
-    const staffRes = await staffService.getStaffProfiles({ orgId, limit: 1000 });
+    const staffRes = await staffService.getStaffProfiles({
+      orgId,
+      userScope: params.userScope === 'team' ? 'organization' : params.userScope,
+      departmentId: params.userScope === 'team' ? params.currentDepartmentId : undefined,
+      currentStaffId: params.currentStaffId,
+      currentDepartmentId: params.currentDepartmentId,
+      currentTeamId: params.currentTeamId,
+      limit: 1000,
+    });
     const depts = await staffService.getDepartments(orgId);
     const teams = await staffService.getTeams(orgId);
     const attRes = await attendanceService.getAttendanceHistory({ ...params, limit: 10000 });
@@ -87,7 +95,15 @@ class AttendanceReportService {
    */
   async getExceptionReport(params: GetAttendanceParams): Promise<AttendanceExceptionItem[]> {
     const attRes = await attendanceService.getAttendanceHistory({ ...params, limit: 10000 });
-    const staffRes = await staffService.getStaffProfiles({ orgId: params.orgId, limit: 1000 });
+    const staffRes = await staffService.getStaffProfiles({
+      orgId: params.orgId,
+      userScope: params.userScope === 'team' ? 'organization' : params.userScope,
+      departmentId: params.userScope === 'team' ? params.currentDepartmentId : undefined,
+      currentStaffId: params.currentStaffId,
+      currentDepartmentId: params.currentDepartmentId,
+      currentTeamId: params.currentTeamId,
+      limit: 1000,
+    });
     const staffMap = new Map<string, StaffProfile>();
     staffRes.data.forEach((s) => staffMap.set(s.id, s));
 

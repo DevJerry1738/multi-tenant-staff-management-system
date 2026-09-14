@@ -605,7 +605,9 @@ class AttendanceService {
           page: 1,
           limit: 10000,
         });
-        scopedStaffIds = staffResult.data.map((staff) => staff.id);
+        scopedStaffIds = staffResult.data
+          .filter((staff) => userScope !== 'team' || staff.department_id === currentDepartmentId)
+          .map((staff) => staff.id);
       }
 
       if (scopedStaffIds && scopedStaffIds.length === 0) {
@@ -649,6 +651,20 @@ class AttendanceService {
     // Scope rules
     if (userScope === 'self' && currentStaffId) {
       list = list.filter((r) => r.staff_id === currentStaffId);
+    } else if (userScope === 'team') {
+      if (!currentDepartmentId) {
+        list = [];
+      } else {
+        const staffResult = await staffService.getStaffProfiles({
+          orgId,
+          userScope: 'organization',
+          departmentId: currentDepartmentId,
+          page: 1,
+          limit: 10000,
+        });
+        const departmentStaffIds = new Set(staffResult.data.map((staff) => staff.id));
+        list = list.filter((r) => departmentStaffIds.has(r.staff_id));
+      }
     }
 
     // Filter by staff if explicitly provided

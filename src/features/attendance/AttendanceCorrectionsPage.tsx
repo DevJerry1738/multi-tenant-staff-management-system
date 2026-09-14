@@ -9,7 +9,13 @@ import { AlertCircle, Check, CheckCircle2, Clock3, X, XCircle } from 'lucide-rea
 
 export const AttendanceCorrectionsPage: React.FC = () => {
   const { activeOrganization, activeRoles, currentStaffProfile } = useTenant();
+  const isAdminOrHR = activeRoles.some((role) => role.name === 'Organization Admin' || role.name === 'HR Manager');
   const isManager = activeRoles.some((role) => role.name === 'Manager');
+  const userScope: 'organization' | 'team' | 'self' = isAdminOrHR
+    ? 'organization'
+    : isManager
+    ? 'team'
+    : 'self';
   const orgId = activeOrganization?.id || '';
   const [requests, setRequests] = useState<AttendanceCorrectionRequest[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
@@ -26,10 +32,26 @@ export const AttendanceCorrectionsPage: React.FC = () => {
     try {
       const [requestList, staffResult] = await Promise.all([
         attendanceService.getCorrectionRequests(orgId),
-        staffService.getStaffProfiles({ orgId, limit: 1000 }),
+        staffService.getStaffProfiles({
+          orgId,
+          userScope: userScope === 'team' ? 'organization' : userScope,
+          departmentId: userScope === 'team' ? currentStaffProfile?.department_id || undefined : undefined,
+          currentStaffId: currentStaffProfile?.id,
+          currentDepartmentId: currentStaffProfile?.department_id || undefined,
+          currentTeamId: currentStaffProfile?.team_id || undefined,
+          limit: 1000,
+        }),
       ]);
-      const attendanceResult = await attendanceService.getAttendanceHistory({ orgId, limit: 1000 });
-      setRequests(requestList.filter((request) => request.status === 'pending'));
+      const attendanceResult = await attendanceService.getAttendanceHistory({
+        orgId,
+        userScope,
+        currentStaffId: currentStaffProfile?.id,
+        currentDepartmentId: currentStaffProfile?.department_id || undefined,
+        currentTeamId: currentStaffProfile?.team_id || undefined,
+        limit: 1000,
+      });
+      const visibleRecordIds = new Set(attendanceResult.data.map((record) => record.id));
+      setRequests(requestList.filter((request) => request.status === 'pending' && visibleRecordIds.has(request.attendance_record_id)));
       setStaff(staffResult.data);
       setAttendanceRecords(attendanceResult.data);
     } catch {
@@ -41,7 +63,7 @@ export const AttendanceCorrectionsPage: React.FC = () => {
 
   useEffect(() => {
     loadRequests();
-  }, [orgId]);
+  }, [currentStaffProfile?.department_id, currentStaffProfile?.id, currentStaffProfile?.team_id, orgId, userScope]);
 
   const reviewRequest = async (request: AttendanceCorrectionRequest, decision: 'approved' | 'rejected') => {
     const reviewerMemberId = currentStaffProfile?.organization_member_id;

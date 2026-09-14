@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export const AttendanceReportsPage: React.FC = () => {
-  const { activeOrganization, activeRoles } = useTenant();
+  const { activeOrganization, activeRoles, currentStaffProfile } = useTenant();
   const orgId = activeOrganization?.id || '';
 
   const isAdminOrHR = activeRoles.some(
@@ -29,7 +29,16 @@ export const AttendanceReportsPage: React.FC = () => {
   const isManager = activeRoles.some((r) => r.name === 'Manager');
   const userScope: 'organization' | 'team' | 'self' = isAdminOrHR
     ? 'organization'
-    : 'team';
+    : isManager
+    ? 'team'
+    : 'self';
+
+  const scopeParams = {
+    userScope,
+    currentStaffId: currentStaffProfile?.id,
+    currentDepartmentId: currentStaffProfile?.department_id || undefined,
+    currentTeamId: currentStaffProfile?.team_id || undefined,
+  };
 
   // Active Report Tab
   const [reportTab, setReportTab] = useState<'monthly' | 'exceptions' | 'daily'>('monthly');
@@ -45,13 +54,13 @@ export const AttendanceReportsPage: React.FC = () => {
     setLoading(true);
 
     if (reportTab === 'monthly') {
-      const data = await attendanceReportService.getMonthlySummaryReport({ orgId, userScope });
+      const data = await attendanceReportService.getMonthlySummaryReport({ orgId, ...scopeParams });
       setMonthlySummaries(data);
     } else if (reportTab === 'exceptions') {
-      const data = await attendanceReportService.getExceptionReport({ orgId, userScope });
+      const data = await attendanceReportService.getExceptionReport({ orgId, ...scopeParams });
       setExceptions(data);
     } else if (reportTab === 'daily') {
-      const res = await attendanceService.getAttendanceHistory({ orgId, userScope, limit: 100 });
+      const res = await attendanceService.getAttendanceHistory({ orgId, ...scopeParams, limit: 100 });
       setDailyRecords(res.data);
     }
 
@@ -60,7 +69,7 @@ export const AttendanceReportsPage: React.FC = () => {
 
   useEffect(() => {
     loadReportData();
-  }, [orgId, reportTab]);
+  }, [currentStaffProfile?.department_id, currentStaffProfile?.id, currentStaffProfile?.team_id, orgId, reportTab, userScope]);
 
   // Handle Export CSV
   const handleExportCSV = () => {
